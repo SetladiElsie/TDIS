@@ -242,34 +242,17 @@ def create_app(config_name=None):
 
 if __name__ == '__main__':
     app = create_app()
-    
+
     # Create necessary directories
     os.makedirs(app.config.get('UPLOAD_FOLDER', 'uploads'), exist_ok=True)
     os.makedirs(app.config.get('BACKUP_FOLDER', 'backups'), exist_ok=True)
     os.makedirs(app.config.get('LOGS_FOLDER', 'logs'), exist_ok=True)
-    
+
     logger.info("Starting Flask development server")
+
     app.run(
         host=os.getenv('FLASK_HOST', '0.0.0.0'),
         port=int(os.getenv('FLASK_PORT', 5000)),
         debug=os.getenv('FLASK_ENV', 'development') == 'development'
     )
-                'health': 'GET /api/health'
-            }
-        }), 200
-    
-    return app
-
-if __name__ == '__main__':
-    app = create_app()
-    
-    # Create uploads directory
-    upload_folder = app.config.get('UPLOAD_FOLDER', 'uploads/')
-    os.makedirs(upload_folder, exist_ok=True)
-    
-    # Run development server
-    app.run(
-        host='0.0.0.0',
-        port=5000,
-        debug=True
-    )
+       
