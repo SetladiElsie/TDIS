@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { uploadDocument, extractInformation } from '../services/api';
+import { uploadDocument, extractInformation, getResults } from '../services/api';
 import { formatFileSize, isFileTypeAllowed } from '../utils/helpers';
 import { ToastContainer, toast } from 'react-toastify';
 import '../styles/Upload.css';
@@ -91,13 +91,16 @@ const Upload = ({ onExtractionStart, onExtractComplete }) => {
     }
   }
 
-  function pollForResults(extractionId, pollCount = 0, maxPolls = 30) {
+  function pollForResults(extractionId) {
+    const maxPolls = 60; // 60 seconds max
+    let pollCount = 0;
+
     const pollInterval = setInterval(async () => {
+      pollCount += 1;
+
       try {
-        const resultsResponse = await fetch(
-          `${process.env.REACT_APP_API_URL}/results/${extractionId}`
-        );
-        const results = await resultsResponse.json();
+        // Use the api service (correct base URL, interceptors) instead of raw fetch
+        const results = await getResults(extractionId);
 
         if (results.status === 'completed') {
           clearInterval(pollInterval);
@@ -114,12 +117,12 @@ const Upload = ({ onExtractionStart, onExtractComplete }) => {
           clearInterval(pollInterval);
           setExtracting(false);
           setUploading(false);
-          toast.error(`Extraction failed: ${results.error_message}`);
+          toast.error(`Extraction failed: ${results.error_message || 'Unknown error'}`);
         } else if (pollCount >= maxPolls) {
           clearInterval(pollInterval);
           setExtracting(false);
           setUploading(false);
-          toast.error('Extraction timeout. Please try again later.');
+          toast.error('Extraction timed out. Please try again.');
         }
       } catch (error) {
         if (pollCount >= maxPolls) {

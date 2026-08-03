@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { listResults, deleteResult, exportResults } from '../services/api';
+import { listResults, deleteResult, exportResults, getResults } from '../services/api';
 import { formatDate, formatCurrency, truncateText, getStatusColor, parseExtractionData } from '../utils/helpers';
 import { toast } from 'react-toastify';
 import '../styles/Results.css';
@@ -8,6 +8,7 @@ const Results = ({ data, refreshTrigger }) => {
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [selectedResult, setSelectedResult] = useState(data || null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [page, setPage] = useState(1);
   const [totalResults, setTotalResults] = useState(0);
   const [search, setSearch] = useState('');
@@ -18,6 +19,25 @@ const Results = ({ data, refreshTrigger }) => {
   useEffect(() => {
     loadResults();
   }, [page, search, statusFilter, refreshTrigger]);
+
+  // When a new extraction comes in via props, fetch its full details and show it
+  useEffect(() => {
+    if (data?.extraction_id) {
+      fetchAndSelect(data.extraction_id);
+    }
+  }, [data]);
+
+  async function fetchAndSelect(extractionId) {
+    setDetailLoading(true);
+    try {
+      const full = await getResults(extractionId);
+      setSelectedResult(full);
+    } catch (error) {
+      toast.error('Could not load extraction details.');
+    } finally {
+      setDetailLoading(false);
+    }
+  }
 
   async function loadResults() {
     setLoading(true);
@@ -120,7 +140,7 @@ const Results = ({ data, refreshTrigger }) => {
                 <div
                   key={result.extraction_id}
                   className={`result-item ${selectedResult?.extraction_id === result.extraction_id ? 'active' : ''}`}
-                  onClick={() => setSelectedResult(result)}
+                  onClick={() => fetchAndSelect(result.extraction_id)}
                 >
                   <div className="result-header">
                     <h3 className="result-title truncate">{result.tender_name}</h3>
@@ -173,7 +193,18 @@ const Results = ({ data, refreshTrigger }) => {
       </div>
 
       {/* Details View */}
-      {selectedResult && parsedData && (
+      {detailLoading && (
+        <div className="details-section">
+          <div className="card">
+            <div className="card-body p-3 flex-center">
+              <div className="spinner"></div>
+              <span style={{ marginLeft: '0.5rem' }}>Loading details...</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!detailLoading && selectedResult && parsedData && (
         <div className="details-section">
           <div className="card">
             <div className="card-header flex-between">
