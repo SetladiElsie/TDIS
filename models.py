@@ -51,20 +51,28 @@ class Extraction(db.Model):
     # Core extracted fields
     tender_id = db.Column(db.String(100), index=True)
     tender_name = db.Column(db.String(255))
+    organization = db.Column(db.String(255))
     scope_of_work = db.Column(db.Text)
     closing_date = db.Column(db.DateTime)
     closing_date_formatted = db.Column(db.String(100))
     contact_email = db.Column(db.String(100))
     contact_phone = db.Column(db.String(20))
-    location = db.Column(db.String(255))
+    address = db.Column(db.String(255))
     estimated_duration = db.Column(db.String(100))
     submission_format = db.Column(db.String(500))
+    document_type = db.Column(db.String(100), default='RFQ/RFP')
+    budget_amount = db.Column(db.String(100))
+    budget_currency = db.Column(db.String(20), default='ZAR')
 
     # JSON list fields
     deliverables = db.Column(db.JSON, default=list)
     compulsory_documents = db.Column(db.JSON, default=list)
     mandatory_criteria = db.Column(db.JSON, default=list)
+    evaluation_criteria = db.Column(db.JSON, default=list)
     pricing_schedule = db.Column(db.JSON, default=list)
+    key_requirements = db.Column(db.JSON, default=list)
+    contact_persons = db.Column(db.JSON, default=list)
+    briefing_session = db.Column(db.String(500))
 
     # Metadata
     confidence_scores = db.Column(db.JSON, default=dict)
@@ -75,18 +83,30 @@ class Extraction(db.Model):
         extracted_data = {
             'tender_id':             self.tender_id,
             'tender_name':           self.tender_name,
+            'organization':          self.organization,
             'scope_of_work':         self.scope_of_work,
             'closing_date':          self.closing_date.isoformat() if self.closing_date else None,
             'closing_date_formatted': self.closing_date_formatted,
             'contact_email':         self.contact_email,
             'contact_phone':         self.contact_phone,
-            'location':              self.location,
+            'address':               self.address,
             'estimated_duration':    self.estimated_duration,
             'submission_format':     self.submission_format,
+            'document_type':         self.document_type,
+            'budget': {
+                'amount': self.budget_amount,
+                'currency': self.budget_currency or 'ZAR',
+            },
+            'budget_amount':         self.budget_amount,
+            'budget_currency':       self.budget_currency or 'ZAR',
             'deliverables':          self.deliverables or [],
             'compulsory_documents':  self.compulsory_documents or [],
             'mandatory_criteria':    self.mandatory_criteria or [],
+            'evaluation_criteria':   self.evaluation_criteria or [],
+            'key_requirements':      self.key_requirements or [],
             'pricing_schedule':      self.pricing_schedule or [],
+            'contact_persons':       self.contact_persons or [],
+            'briefing_session':      self.briefing_session,
         }
 
         return {

@@ -7,6 +7,7 @@ import csv
 import json
 from io import BytesIO, StringIO
 import time
+from threading import Thread
 
 from models import db, Upload, Extraction
 from extraction import process_document
@@ -115,8 +116,8 @@ def extract_information():
         db.session.add(extraction)
         db.session.commit()
 
-        # Run extraction synchronously (swap for Celery task when ENABLE_ASYNC=True)
-        _run_extraction(extraction_id, upload.upload_path)
+        # Run extraction in the background so the API responds immediately
+        _start_extraction_thread(extraction_id, upload.upload_path)
 
         return jsonify({
             'extraction_id': extraction_id,
@@ -127,6 +128,19 @@ def extract_information():
 
     except Exception as e:
         return jsonify({'error': str(e), 'code': 'EXTRACTION_ERROR'}), 500
+
+
+def _start_extraction_thread(extraction_id: str, upload_path: str):
+    """Start extraction work in a background thread so the request returns quickly."""
+    app = current_app._get_current_object()
+
+    def _worker():
+        with app.app_context():
+            _run_extraction(extraction_id, upload_path)
+
+    thread = Thread(target=_worker, daemon=True)
+    thread.start()
+    return thread
 
 
 def _run_extraction(extraction_id: str, upload_path: str):
@@ -151,18 +165,23 @@ def _run_extraction(extraction_id: str, upload_path: str):
         extraction.organization      = fields.get('organization') or None
         extraction.scope_of_work     = fields.get('scope_of_work') or None
         extraction.budget_amount     = fields.get('budget_amount') or None
+        extraction.budget_currency   = fields.get('budget_currency') or 'ZAR'
         extraction.contact_email     = fields.get('contact_email') or None
         extraction.contact_phone     = fields.get('contact_phone') or None
-        extraction.location          = fields.get('location') or None
+        extraction.location          = fields.get('address') or None
         extraction.estimated_duration = fields.get('estimated_duration') or None
         extraction.submission_format = fields.get('submission_format') or None
-        extraction.document_type     = 'RFQ/RFP'
+        extraction.document_type     = fields.get('document_type') or 'RFQ/RFP'
 
         # ── list fields — guarantee they are lists, never None ──
         extraction.evaluation_criteria  = fields.get('evaluation_criteria') or []
         extraction.deliverables         = fields.get('deliverables') or []
         extraction.compulsory_documents = fields.get('compulsory_documents') or []
-        extraction.key_requirements     = fields.get('compulsory_documents') or []
+        extraction.mandatory_criteria   = fields.get('mandatory_criteria') or []
+        extraction.pricing_schedule     = fields.get('pricing_schedule') or []
+        extraction.key_requirements     = fields.get('mandatory_criteria') or fields.get('key_requirements') or []
+        extraction.contact_persons      = fields.get('contact_persons') or []
+        extraction.briefing_session     = fields.get('briefing_session') or None
 
         # ── closing date — store both formatted string and parsed datetime ──
         closing_str = fields.get('closing_date')

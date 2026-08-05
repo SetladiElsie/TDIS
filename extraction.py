@@ -24,8 +24,12 @@ from extractors import (
     extract_compulsory_documents,
     extract_deliverables,
     extract_contact_info,
-    extract_location,
+    extract_address,
     extract_duration,
+    extract_organization,
+    extract_budget,
+    extract_evaluation_criteria,
+    extract_briefing_session,
 )
 
 
@@ -129,9 +133,9 @@ _SECTION_HEADINGS = [
     ('background',     r'^\s*(?:\d+[\.\s]+)?background\b'),
     ('scope',          r'^\s*(?:\d+[\.\s]+)?scope\s+of\s+work\b'),
     ('objective',      r'^\s*(?:\d+[\.\s]+)?objective[s]?\b'),
-    ('specifications', r'^\s*(?:\d+[\.\s]+)?specifications?\b'),
+    ('specifications', r'^\s*(?:\d+[\.\s]+)?(?:specification[s]?(?:\s*/\s*terms\s+of\s+reference|\s*\(please[^)]*\))?|terms\s+of\s+reference)\b'),
     ('evaluation',     r'^\s*(?:\d+[\.\s]+)?evaluation'),
-    ('compulsory',     r'^\s*(?:\d+[\.\s]+)?(?:compulsory|mandatory)\s+(?:document|requirement|returnable|site|briefing)'),
+    ('compulsory',     r'^\s*(?:\d+[\.\s]+)?(?:compulsory|mandatory)\s+(?:documents?|requirements?|returnables?|sites?|briefings?)'),
     ('submission',     r'^\s*(?:\d+[\.\s]+)?(?:submission|how\s+to\s+(?:bid|submit)|bidding\s+procedure)'),
     ('contact',        r'^\s*(?:\d+[\.\s]+)?contact\b'),
     ('deliverables',   r'^\s*(?:\d+[\.\s]+)?deliverables?\b'),
@@ -181,20 +185,28 @@ def process_document(filepath: str, file_type: str) -> dict:
     text     = _normalise(raw)
     sections = _split_sections(text)
 
-    email, phone = extract_contact_info(text)
+    contacts, email, phone = extract_contact_info(text)
+    budget = extract_budget(text)
 
     return {
         'tender_id':            extract_tender_id(text),
         'tender_name':          extract_tender_name(text),
+        'organization':         extract_organization(text),
         'closing_date':         extract_closing_date(text),
         'scope_of_work':        extract_scope_of_work(sections),
         'mandatory_criteria':   extract_mandatory_criteria(sections),
+        'evaluation_criteria':  extract_evaluation_criteria(sections),
         'pricing_schedule':     extract_pricing_schedule(sections),
         'submission_format':    extract_submission_details(sections),
         'deliverables':         extract_deliverables(sections),
         'compulsory_documents': extract_compulsory_documents(sections),
         'contact_email':        email,
         'contact_phone':        phone,
-        'location':             extract_location(text),
+        'contact_persons':      contacts,
+        'address':              extract_address(text),
+        'briefing_session':     extract_briefing_session(text),
         'estimated_duration':   extract_duration(sections),
+        'budget_amount':        budget.get('amount'),
+        'budget_currency':      budget.get('currency'),
+        'document_type':        'RFQ/RFP',
     }
