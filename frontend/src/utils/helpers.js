@@ -93,22 +93,7 @@ export const formatFileSize = (bytes) => {
 /**
  * Get status badge color
  * @param {string} status - Status value
- * @returns {string} CSS class for status
- */
-export const getStatusColor = (status) => {
-  const statusColors = {
-    completed: 'success',
-    processing: 'info',
-    failed: 'danger',
-    uploaded: 'warning',
-  };
-  return statusColors[status] || 'secondary';
-};
-
-/**
- * Get status icon
- * @param {string} status - Status value
- * @returns {string} Icon name
+ * @returns {string} Icon for the status
  */
 export const getStatusIcon = (status) => {
   const statusIcons = {
@@ -119,6 +104,7 @@ export const getStatusIcon = (status) => {
   };
   return statusIcons[status] || '?';
 };
+ 
 
 /**
  * Download JSON data as file
@@ -175,10 +161,23 @@ export const getConfidenceDisplay = (score) => {
  * @param {Object} data - Extraction data
  * @returns {Object} Parsed data with defaults
  */
+export const formatSouthAfricanPhone = (phone) => {
+  if (!phone) return 'N/A';
+  const digits = String(phone).replace(/\D/g, '');
+  if (digits.length === 10 && digits.startsWith('0')) {
+    return digits;
+  }
+  if (digits.length === 11 && digits.startsWith('27')) {
+    return `0${digits.slice(2)}`;
+  }
+  return String(phone);
+};
+
 export const parseExtractionData = (data) => {
   return {
     tender_id: data?.tender_id || 'N/A',
     tender_name: data?.tender_name || 'Unknown Tender',
+    description: data?.description || data?.tender_name || 'No description provided',
     organization: data?.organization || 'N/A',
     scope_of_work: data?.scope_of_work || 'No scope provided',
     closing_date: data?.closing_date || null,
@@ -191,6 +190,8 @@ export const parseExtractionData = (data) => {
     estimated_duration: data?.estimated_duration || 'N/A',
     submission_format: data?.submission_format || 'N/A',
     key_requirements: Array.isArray(data?.key_requirements) ? data.key_requirements : [],
+    mandatory_criteria: Array.isArray(data?.mandatory_criteria) ? data.mandatory_criteria : [],
+    minimum_requirements: Array.isArray(data?.minimum_requirements) ? data.minimum_requirements : [],
     evaluation_criteria: Array.isArray(data?.evaluation_criteria) ? data.evaluation_criteria : [],
     deliverables: Array.isArray(data?.deliverables) ? data.deliverables : [],
     compulsory_documents: Array.isArray(data?.compulsory_documents) ? data.compulsory_documents : [],

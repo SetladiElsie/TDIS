@@ -1,13 +1,14 @@
 import os
+from datetime import datetime
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-from functools import wraps
+from sqlalchemy import text
 
 from config import config
-from models import db
+from models import db, User
 from routes import api
-from logger import setup_logging, audit_logger, get_logger
+from logger import setup_logging, get_logger
 from errors import TenderAPIError
 from cache import CacheManager
 
@@ -57,11 +58,58 @@ def create_app(config_name=None):
     # Register blueprints
     app.register_blueprint(api, url_prefix=app.config.get('API_PREFIX', '/api'))
     
-    # Create database tables
+    def ensure_sqlite_columns():
+        if not app.config['SQLALCHEMY_DATABASE_URI'].startswith('sqlite'):
+            return
+
+        required_columns = {
+            'uploads': [
+                ('assigned_user_id', 'TEXT'),
+                ('assigned_user_name', 'TEXT'),
+            ],
+            'extractions': [
+                ('assigned_user_id', 'TEXT'),
+                ('assigned_user_name', 'TEXT'),
+            ],
+        }
+
+        for table, columns in required_columns.items():
+            existing = [row[1] for row in db.session.execute(text(f"PRAGMA table_info({table})")).fetchall()]
+            for column_name, column_type in columns:
+                if column_name not in existing:
+                    logger.info(f"Adding missing column {column_name} to {table}")
+                    db.session.execute(text(f"ALTER TABLE {table} ADD COLUMN {column_name} {column_type}"))
+        db.session.commit()
+
+    # Create database tables and seed default users
     with app.app_context():
         try:
+            # Ensure the SQLite directory exists before initializing the database
+            if app.config['SQLALCHEMY_DATABASE_URI'].startswith('sqlite:///'):
+                sqlite_path = app.config['SQLALCHEMY_DATABASE_URI'].replace('sqlite:///', '')
+                sqlite_dir = os.path.dirname(os.path.abspath(sqlite_path))
+                if sqlite_dir:
+                    os.makedirs(sqlite_dir, exist_ok=True)
+
             db.create_all()
             logger.info("Database tables created/verified")
+            ensure_sqlite_columns()
+
+            default_users = [
+                'Mukovhe',
+                'Elsie',
+                'Boitumelo',
+                'Dumisani',
+                'Nhlanhla',
+                'Keitumetse',
+            ]
+            existing_names = {u.name for u in User.query.all()}
+            for name in default_users:
+                if name not in existing_names:
+                    db.session.add(User(name=name))
+            if default_users:
+                db.session.commit()
+                logger.info("Default users seeded")
         except Exception as e:
             logger.error(f"Database initialization failed: {str(e)}")
     
@@ -136,7 +184,6 @@ def create_app(config_name=None):
             'name': app.config.get('API_TITLE', 'Tender Document Extraction API'),
             'version': app.config.get('API_VERSION', '1.0.0'),
             'status': 'running',
-            'environment': config,
             'endpoints': {
                 'upload': 'POST /api/upload',
                 'extract': 'POST /api/extract',
@@ -146,12 +193,9 @@ def create_app(config_name=None):
                 'delete': 'DELETE /api/results/<extraction_id>',
                 'health': 'GET /api/health',
                 'docs': 'GET /api/docs',
-                'admin': 'GET /api/admin',
-                'backups': 'GET /api/backups',
             },
             'features': {
                 'async_processing': app.config.get('ENABLE_ASYNC', False),
-                'webhooks': app.config.get('ENABLE_WEBHOOKS', False),
                 'ocr_support': app.config.get('ENABLE_OCR', False),
                 'ml_extraction': app.config.get('ENABLE_ML', False),
             }
@@ -161,21 +205,19 @@ def create_app(config_name=None):
     def health_check():
         """Health check endpoint"""
         try:
-            # Check database
-            db.session.execute('SELECT 1')
+            from sqlalchemy import text
+            db.session.execute(text('SELECT 1'))
             db_status = 'connected'
         except Exception as e:
             logger.warning(f"Database health check failed: {str(e)}")
             db_status = 'disconnected'
-        
-        # Check cache
+
         cache_status = 'connected' if app.cache else 'unavailable'
-        
         status = 'healthy' if db_status == 'connected' else 'degraded'
-        
+
         return jsonify({
             'status': status,
-            'timestamp': os.getenv('CURRENT_TIMESTAMP', 'N/A'),
+            'timestamp': datetime.utcnow().isoformat(),
             'database': db_status,
             'cache': cache_status,
             'version': app.config.get('API_VERSION')
@@ -227,49 +269,33 @@ def create_app(config_name=None):
         """Log incoming request"""
         if not request.path.startswith('/static'):
             logger.debug(f"{request.method} {request.path} from {request.remote_addr}")
-    
+
     @app.after_request
     def log_response(response):
         """Log response"""
         if not request.path.startswith('/static'):
             logger.debug(f"Response: {response.status_code} for {request.method} {request.path}")
         return response
-    
-    logger.info(f"Application initialized successfully")
+
+    logger.info("Application initialized successfully")
     
     return app
 
 
 if __name__ == '__main__':
     app = create_app()
-    
+
     # Create necessary directories
     os.makedirs(app.config.get('UPLOAD_FOLDER', 'uploads'), exist_ok=True)
-    os.makedirs(app.config.get('BACKUP_FOLDER', 'backups'), exist_ok=True)
     os.makedirs(app.config.get('LOGS_FOLDER', 'logs'), exist_ok=True)
-    
+    instance_path = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'instance')
+    os.makedirs(instance_path, exist_ok=True)
+
     logger.info("Starting Flask development server")
+
     app.run(
         host=os.getenv('FLASK_HOST', '0.0.0.0'),
         port=int(os.getenv('FLASK_PORT', 5000)),
         debug=os.getenv('FLASK_ENV', 'development') == 'development'
     )
-                'health': 'GET /api/health'
-            }
-        }), 200
-    
-    return app
-
-if __name__ == '__main__':
-    app = create_app()
-    
-    # Create uploads directory
-    upload_folder = app.config.get('UPLOAD_FOLDER', 'uploads/')
-    os.makedirs(upload_folder, exist_ok=True)
-    
-    # Run development server
-    app.run(
-        host='0.0.0.0',
-        port=5000,
-        debug=True
-    )
+       

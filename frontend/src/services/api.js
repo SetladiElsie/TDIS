@@ -45,9 +45,12 @@ apiClient.interceptors.response.use(
  * @param {File} file - Document file to upload
  * @returns {Promise<Object>} Upload response with upload_id
  */
-export const uploadDocument = async (file) => {
+export const uploadDocument = async (file, assignedUserId) => {
   const formData = new FormData();
   formData.append('file', file);
+  if (assignedUserId) {
+    formData.append('assigned_user_id', assignedUserId);
+  }
 
   const response = await apiClient.post('/upload', formData, {
     headers: {
@@ -71,6 +74,15 @@ export const extractInformation = async (uploadId) => {
   return response.data;
 };
 
+
+export const importDocument = async (downloadUrl) => {
+  const response = await apiClient.post('/import', {
+    download_url: downloadUrl,
+  });
+
+  return response.data;
+};
+
 /**
  * Get extraction results
  * @param {string} extractionId - Extraction ID
@@ -78,6 +90,16 @@ export const extractInformation = async (uploadId) => {
  */
 export const getResults = async (extractionId) => {
   const response = await apiClient.get(`/results/${extractionId}`);
+  return response.data;
+};
+
+export const updateResult = async (extractionId, payload) => {
+  const response = await apiClient.patch(`/results/${extractionId}`, payload);
+  return response.data;
+};
+
+export const getUsers = async () => {
+  const response = await apiClient.get('/users');
   return response.data;
 };
 

@@ -103,16 +103,7 @@ class AuditLogger:
             f"Deletion: user={user_id}, extraction={extraction_id}",
             extra={'action': 'DELETE', 'user_id': user_id}
         )
-    
-    def log_auth_attempt(self, user_id, success):
-        """Log authentication attempt"""
-        level = logging.INFO if success else logging.WARNING
-        self.logger.log(
-            level,
-            f"Auth attempt: user={user_id}, success={success}",
-            extra={'action': 'AUTH', 'user_id': user_id}
-        )
-    
+
     def log_error(self, error_type, message, context=None):
         """Log errors"""
         self.logger.error(
