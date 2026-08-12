@@ -9,7 +9,7 @@ from io import BytesIO, StringIO
 import time
 from threading import Thread
 
-from models import db, Upload, Extraction
+from models import db, User, Upload, Extraction
 from extraction import process_document
 
 api = Blueprint('api', __name__, url_prefix='/api')
@@ -72,6 +72,15 @@ def upload_file():
         file.save(upload_path)
         file_size = os.path.getsize(upload_path)
 
+        assigned_user_id = request.form.get('assigned_user_id')
+        assigned_user_name = None
+        if assigned_user_id:
+            user = User.query.get(assigned_user_id)
+            if user:
+                assigned_user_name = user.name
+            else:
+                return jsonify({'error': 'Assigned user not found', 'code': 'USER_NOT_FOUND'}), 400
+
         record = Upload(
             id=upload_id,
             filename=filename,
@@ -79,6 +88,8 @@ def upload_file():
             file_size=file_size,
             upload_path=upload_path,
             status='uploaded',
+            assigned_user_id=assigned_user_id,
+            assigned_user_name=assigned_user_name,
         )
         db.session.add(record)
         db.session.commit()
@@ -112,7 +123,13 @@ def extract_information():
             return jsonify({'error': 'Upload not found', 'code': 'UPLOAD_NOT_FOUND'}), 404
 
         extraction_id = str(uuid.uuid4())
-        extraction = Extraction(id=extraction_id, upload_id=upload_id, status='processing')
+        extraction = Extraction(
+            id=extraction_id,
+            upload_id=upload_id,
+            status='processing',
+            assigned_user_id=upload.assigned_user_id,
+            assigned_user_name=upload.assigned_user_name,
+        )
         db.session.add(extraction)
         db.session.commit()
 
@@ -168,7 +185,7 @@ def _run_extraction(extraction_id: str, upload_path: str):
         extraction.budget_currency   = fields.get('budget_currency') or 'ZAR'
         extraction.contact_email     = fields.get('contact_email') or None
         extraction.contact_phone     = fields.get('contact_phone') or None
-        extraction.location          = fields.get('address') or None
+        extraction.location          = fields.get('location') or None
         extraction.estimated_duration = fields.get('estimated_duration') or None
         extraction.submission_format = fields.get('submission_format') or None
         extraction.document_type     = fields.get('document_type') or 'RFQ/RFP'
@@ -180,8 +197,6 @@ def _run_extraction(extraction_id: str, upload_path: str):
         extraction.mandatory_criteria   = fields.get('mandatory_criteria') or []
         extraction.pricing_schedule     = fields.get('pricing_schedule') or []
         extraction.key_requirements     = fields.get('mandatory_criteria') or fields.get('key_requirements') or []
-        extraction.contact_persons      = fields.get('contact_persons') or []
-        extraction.briefing_session     = fields.get('briefing_session') or None
 
         # ── closing date — store both formatted string and parsed datetime ──
         closing_str = fields.get('closing_date')
@@ -227,6 +242,53 @@ def get_result(extraction_id):
         return jsonify({'error': str(e), 'code': 'RETRIEVAL_ERROR'}), 500
 
 
+@api.route('/results/<extraction_id>', methods=['PATCH'])
+def update_result(extraction_id):
+    try:
+        extraction = Extraction.query.get(extraction_id)
+        if not extraction:
+            return jsonify({'error': 'Extraction not found', 'code': 'EXTRACTION_NOT_FOUND'}), 404
+
+        data = request.json or {}
+        new_user_id = data.get('assigned_user_id')
+        new_status = data.get('status')
+
+        if new_user_id:
+            user = User.query.get(new_user_id)
+            if not user:
+                return jsonify({'error': 'Assigned user not found', 'code': 'USER_NOT_FOUND'}), 400
+            extraction.assigned_user_id = user.id
+            extraction.assigned_user_name = user.name
+            upload = Upload.query.get(extraction.upload_id)
+            if upload:
+                upload.assigned_user_id = user.id
+                upload.assigned_user_name = user.name
+
+        if new_status:
+            if not extraction.assigned_user_id:
+                return jsonify({'error': 'Status can only be updated after a user is assigned', 'code': 'UNASSIGNED_TENDER'}), 400
+            valid_statuses = {'processing', 'completed', 'failed'}
+            if new_status not in valid_statuses:
+                return jsonify({'error': 'Invalid status', 'code': 'INVALID_STATUS'}), 400
+            extraction.status = new_status
+            if new_status == 'completed' and not extraction.completed_at:
+                extraction.completed_at = datetime.utcnow()
+
+        db.session.commit()
+        return jsonify(extraction.to_dict()), 200
+    except Exception as e:
+        return jsonify({'error': str(e), 'code': 'UPDATE_ERROR'}), 500
+
+
+@api.route('/users', methods=['GET'])
+def list_users():
+    try:
+        users = User.query.order_by(User.name).all()
+        return jsonify([u.to_dict() for u in users]), 200
+    except Exception as e:
+        return jsonify({'error': str(e), 'code': 'LIST_USERS_ERROR'}), 500
+
+
 @api.route('/results', methods=['GET'])
 def list_results():
     try:
@@ -260,6 +322,7 @@ def list_results():
                 'organization':  r.organization,
                 'closing_date':  r.closing_date.isoformat() if r.closing_date else None,
                 'closing_date_formatted': r.closing_date_formatted,
+                'assigned_user_name': r.assigned_user_name,
                 'created_at':    r.created_at.isoformat(),
             })
 

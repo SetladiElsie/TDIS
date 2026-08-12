@@ -489,6 +489,14 @@ def extract_scope_of_work(sections):
 
         pos = m.end()
 
+    # ── Fallback: terms of reference section ────────────────────────────────
+    tor_body = _section_body(full,
+        r'(?:\d+[\.\d]*[ \t]+)?TERMS\s+OF\s+REFERENCE(?:\s*/\s*SCOPE\s+OF\s+WORKS?|/SPECIFICATIONS?)?',
+        r'(?:\d+[\.\d]*[ \t]+)?TERMS\s+OF\s+REFERENCE(?:\s*[:\n]|$)'
+    )
+    if tor_body and not _is_junk(tor_body) and len(tor_body.strip()) >= 50:
+        return _clean_scope_body(tor_body)
+
     # ── Fallback: background / purpose section ───────────────────────────────
     for key in ('background', 'purpose'):
         body = sections.get(key, '')

@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { listResults, deleteResult, exportResults, getResults } from '../services/api';
-import { formatDate, getStatusColor, parseExtractionData } from '../utils/helpers';
-import { toast } from 'react-toastify';
+import { listResults, getResults, updateResult } from '../services/api';
+import { parseExtractionData, formatSouthAfricanPhone } from '../utils/helpers';
 import '../styles/Results.css';
 
 const Results = ({ data, refreshTrigger }) => {
@@ -10,6 +9,8 @@ const Results = ({ data, refreshTrigger }) => {
   const [expandedId, setExpandedId] = useState(null);
   const [expandedData, setExpandedData] = useState({});
   const [loadingId, setLoadingId] = useState(null);
+  const [loadError, setLoadError] = useState('');
+  const [statusUpdateError, setStatusUpdateError] = useState('');
   const [page, setPage] = useState(1);
   const [totalResults, setTotalResults] = useState(0);
   const [search, setSearch] = useState('');
@@ -19,6 +20,7 @@ const Results = ({ data, refreshTrigger }) => {
 
   const loadResults = useCallback(async () => {
     setLoading(true);
+    setLoadError('');
     try {
       const params = {
         page,
@@ -30,7 +32,7 @@ const Results = ({ data, refreshTrigger }) => {
       setResults(response.results || []);
       setTotalResults(response.total || 0);
     } catch (error) {
-      toast.error('Failed to load results: ' + error.message);
+      setLoadError('Failed to load results: ' + error.message);
     } finally {
       setLoading(false);
     }
@@ -39,6 +41,8 @@ const Results = ({ data, refreshTrigger }) => {
   useEffect(() => {
     loadResults();
   }, [loadResults, refreshTrigger]);
+
+  async function toggleExpand(extractionId) {
     // Collapse if already open
     if (expandedId === extractionId) {
       setExpandedId(null);
@@ -55,39 +59,10 @@ const Results = ({ data, refreshTrigger }) => {
       const full = await getResults(extractionId);
       setExpandedData((prev) => ({ ...prev, [extractionId]: full }));
     } catch (error) {
-      toast.error('Could not load extraction details.');
+      setLoadError('Could not load extraction details.');
       setExpandedId(null);
     } finally {
       setLoadingId(null);
-    }
-  }
-
-  async function handleDelete(extractionId, e) {
-    e.stopPropagation();
-    if (window.confirm('Are you sure you want to delete this result?')) {
-      try {
-        await deleteResult(extractionId);
-        toast.success('Result deleted successfully');
-        setExpandedId(null);
-        setExpandedData((prev) => {
-          const copy = { ...prev };
-          delete copy[extractionId];
-          return copy;
-        });
-        loadResults();
-      } catch (error) {
-        toast.error('Failed to delete result: ' + error.message);
-      }
-    }
-  }
-
-  async function handleExport(extractionId, format, e) {
-    e.stopPropagation();
-    try {
-      await exportResults(extractionId, format);
-      toast.success(`Exported as ${format.toUpperCase()}`);
-    } catch (error) {
-      toast.error('Export failed: ' + error.message);
     }
   }
 
@@ -128,6 +103,8 @@ const Results = ({ data, refreshTrigger }) => {
           <div className="spinner"></div>
           <span>Loading results...</span>
         </div>
+      ) : loadError ? (
+        <div className="alert alert-danger mb-4">{loadError}</div>
       ) : results.length === 0 ? (
         <div className="empty-state">
           <div className="empty-icon">📭</div>
@@ -154,26 +131,20 @@ const Results = ({ data, refreshTrigger }) => {
                     onClick={() => toggleExpand(result.extraction_id)}
                   >
                     <div className="result-header">
-                      <h3 className="result-title truncate">{result.tender_name}</h3>
+                      <div className="result-title-group">
+                        <h3 className="result-title truncate">{result.tender_name}</h3>
+                        <div className="result-meta">
+                          <div className="meta-item">
+                            <span className="meta-label">Assigned</span>
+                            <span className="meta-value">{result.assigned_user_name || 'Unassigned'}</span>
+                          </div>
+                        </div>
+                      </div>
                       <div className="result-header-right">
-                        <span className={`badge badge-${getStatusColor(result.status)}`}>
+                        <div className={`form-control result-status status-${result.status}`}>
                           {result.status}
-                        </span>
+                        </div>
                         <span className={`accordion-arrow ${isOpen ? 'open' : ''}`}>▾</span>
-                      </div>
-                    </div>
-                    <div className="result-meta">
-                      <div className="meta-item">
-                        <span className="meta-label">ID:</span>
-                        <span className="meta-value">{result.extraction_id.slice(0, 8)}...</span>
-                      </div>
-                      <div className="meta-item">
-                        <span className="meta-label">Closing:</span>
-                        <span className="meta-value">{result.closing_date_formatted || result.closing_date || 'N/A'}</span>
-                      </div>
-                      <div className="meta-item">
-                        <span className="meta-label">Created:</span>
-                        <span className="meta-value">{formatDate(result.created_at)}</span>
                       </div>
                     </div>
                   </div>
@@ -188,28 +159,6 @@ const Results = ({ data, refreshTrigger }) => {
                         </div>
                       ) : parsedData ? (
                         <>
-                          {/* Action buttons */}
-                          <div className="accordion-actions">
-                            <button
-                              className="btn btn-sm btn-outline"
-                              onClick={(e) => handleExport(result.extraction_id, 'json', e)}
-                            >
-                              Download JSON
-                            </button>
-                            <button
-                              className="btn btn-sm btn-outline"
-                              onClick={(e) => handleExport(result.extraction_id, 'csv', e)}
-                            >
-                              Download CSV
-                            </button>
-                            <button
-                              className="btn btn-sm btn-danger"
-                              onClick={(e) => handleDelete(result.extraction_id, e)}
-                            >
-                              Delete
-                            </button>
-                          </div>
-
                           {/* Basic Information */}
                           <div className="detail-section">
                             <h3 className="detail-title">Basic Information</h3>
@@ -220,17 +169,11 @@ const Results = ({ data, refreshTrigger }) => {
                               </div>
                               <div className="detail-item">
                                 <span className="detail-label">Description</span>
-                                <span className="detail-value">{parsedData.tender_name || '—'}</span>
+                                <span className="detail-value">{parsedData.description || '—'}</span>
                               </div>
                               <div className="detail-item">
                                 <span className="detail-label">Organisation</span>
                                 <span className="detail-value">{parsedData.organization || '—'}</span>
-                              </div>
-                              <div className="detail-item">
-                                <span className="detail-label">Closing Date</span>
-                                <span className="detail-value text-danger">
-                                  {parsedData.closing_date_formatted || '—'}
-                                </span>
                               </div>
                             </div>
                           </div>
@@ -248,15 +191,8 @@ const Results = ({ data, refreshTrigger }) => {
                           {/* Scope of Work */}
                           <div className="detail-section">
                             <h3 className="detail-title">Scope of Work</h3>
-                            <div className="detail-text scope-text">
-                              {parsedData.scope_of_work
-                                ? parsedData.scope_of_work.split('\n').map((line, idx) =>
-                                    line.trim() === ''
-                                      ? <br key={idx} />
-                                      : <p key={idx} style={{ margin: '0 0 0.4rem 0' }}>{line}</p>
-                                  )
-                                : <span className="text-muted">Not found</span>
-                              }
+                            <div className="detail-text scope-text" style={{ whiteSpace: 'pre-wrap' }}>
+                              {parsedData.scope_of_work || 'Not found'}
                             </div>
                           </div>
 
@@ -291,7 +227,9 @@ const Results = ({ data, refreshTrigger }) => {
                                       <div className="detail-item">
                                         <span className="detail-label">Phone</span>
                                         <span className="detail-value">
-                                          <a href={`tel:${person.phone}`}>{person.phone}</a>
+                                          <a href={`tel:${formatSouthAfricanPhone(person.phone)}`}>
+                                            {formatSouthAfricanPhone(person.phone)}
+                                          </a>
                                         </span>
                                       </div>
                                     )}
@@ -309,7 +247,9 @@ const Results = ({ data, refreshTrigger }) => {
                                 <div className="detail-item">
                                   <span className="detail-label">Phone</span>
                                   <span className="detail-value">
-                                    <a href={`tel:${parsedData.contact_phone}`}>{parsedData.contact_phone}</a>
+                                    <a href={`tel:${formatSouthAfricanPhone(parsedData.contact_phone)}`}>
+                                      {formatSouthAfricanPhone(parsedData.contact_phone)}
+                                    </a>
                                   </span>
                                 </div>
                               </div>
@@ -332,6 +272,65 @@ const Results = ({ data, refreshTrigger }) => {
                             )}
                           </div>
 
+                          <div className="detail-section">
+                            <h3 className="detail-title">Assignment</h3>
+                            <div className="detail-grid">
+                              <div className="detail-item">
+                                <span className="detail-label">Assigned User</span>
+                                <span className="detail-value">{full.assigned_user?.name || 'Unassigned'}</span>
+                              </div>
+                              <div className="detail-item">
+                                <span className="detail-label">Current Status</span>
+                                <span className="detail-value">{full.status}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="detail-section">
+                            <h3 className="detail-title">Update Status</h3>
+                            <div className="detail-grid">
+                              <div className="detail-item">
+                                <select
+                                  className="form-control"
+                                  value={full.status}
+                                  onChange={async (e) => {
+                                    setStatusUpdateError('');
+                                    const nextStatus = e.target.value;
+                                    if (!full.assigned_user?.id) {
+                                      setStatusUpdateError('Status can only be updated once a user is assigned.');
+                                      return;
+                                    }
+                                    try {
+                                      const updated = await updateResult(full.extraction_id, {
+                                        status: nextStatus,
+                                      });
+                                      setExpandedData((prev) => ({
+                                        ...prev,
+                                        [full.extraction_id]: updated,
+                                      }));
+                                      setResults((prev) => prev.map((item) => item.extraction_id === full.extraction_id ? {
+                                        ...item,
+                                        status: updated.status,
+                                      } : item));
+                                    } catch (err) {
+                                      setStatusUpdateError(err.message || 'Could not update status.');
+                                    }
+                                  }}
+                                  disabled={!full.assigned_user?.id}
+                                >
+                                  <option value="processing">processing</option>
+                                  <option value="completed">completed</option>
+                                  <option value="failed">failed</option>
+                                </select>
+                              </div>
+                            </div>
+                            {statusUpdateError && (
+                              <div className="alert alert-danger mt-2">
+                                {statusUpdateError}
+                              </div>
+                            )}
+                          </div>
+
                           {/* Mandatory Criteria */}
                           {parsedData.mandatory_criteria && parsedData.mandatory_criteria.length > 0 && (
                             <div className="detail-section">
@@ -344,12 +343,12 @@ const Results = ({ data, refreshTrigger }) => {
                             </div>
                           )}
 
-                          {/* Evaluation Criteria */}
-                          {parsedData.evaluation_criteria.length > 0 && (
+                          {/* Minimum Requirements */}
+                          {parsedData.minimum_requirements.length > 0 && (
                             <div className="detail-section">
-                              <h3 className="detail-title">Evaluation Criteria</h3>
+                              <h3 className="detail-title">Minimum Requirements</h3>
                               <ul className="detail-list">
-                                {parsedData.evaluation_criteria.map((item, idx) => (
+                                {parsedData.minimum_requirements.map((item, idx) => (
                                   <li key={idx}>{item}</li>
                                 ))}
                               </ul>

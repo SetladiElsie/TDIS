@@ -1,8 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { uploadDocument, extractInformation, getResults } from '../services/api';
+import { uploadDocument, extractInformation, getResults, getUsers } from '../services/api';
 import { formatFileSize, isFileTypeAllowed } from '../utils/helpers';
-import { ToastContainer, toast } from 'react-toastify';
 import '../styles/Upload.css';
 
 const Upload = ({ onExtractionStart, onExtractComplete }) => {
@@ -10,6 +9,9 @@ const Upload = ({ onExtractionStart, onExtractComplete }) => {
   const [extracting, setExtracting] = useState(false);
   const [file, setFile] = useState(null);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [users, setUsers] = useState([]);
+  const [assignedUserId, setAssignedUserId] = useState('');
+  const [error, setError] = useState(null);
 
   const allowedFormats = [
     'application/pdf',
@@ -26,21 +28,34 @@ const Upload = ({ onExtractionStart, onExtractComplete }) => {
     noClick: false,
   });
 
+  useEffect(() => {
+    async function loadUsers() {
+      try {
+        const list = await getUsers();
+        setUsers(list || []);
+      } catch (err) {
+        console.warn('Failed to load users', err);
+      }
+    }
+
+    loadUsers();
+  }, []);
+
   function handleDrop(acceptedFiles) {
     if (acceptedFiles.length > 0) {
       const droppedFile = acceptedFiles[0];
       if (isFileTypeAllowed(droppedFile, allowedFormats)) {
         setFile(droppedFile);
-        toast.success(`File "${droppedFile.name}" selected successfully!`);
+        setError(null);
       } else {
-        toast.error('File type not supported. Please upload a PDF, DOCX, TXT, CSV, or XLSX file.');
+        setError('File type not supported. Please upload a PDF, DOCX, TXT, CSV, or XLSX file.');
       }
     }
   }
 
   async function handleUpload() {
     if (!file) {
-      toast.error('Please select a file first');
+      setError('Please select a file first');
       return;
     }
 
@@ -57,11 +72,9 @@ const Upload = ({ onExtractionStart, onExtractComplete }) => {
       }, 200);
 
       // Upload the file
-      const uploadResponse = await uploadDocument(file);
+      const uploadResponse = await uploadDocument(file, assignedUserId);
       clearInterval(progressInterval);
       setUploadProgress(100);
-
-      toast.success('File uploaded successfully!');
 
       // Start extraction
       setExtracting(true);
@@ -69,7 +82,7 @@ const Upload = ({ onExtractionStart, onExtractComplete }) => {
         handleExtract(uploadResponse.upload_id);
       }, 500);
     } catch (error) {
-      toast.error(error.message || 'Upload failed. Please try again.');
+      setError(error.message || 'Upload failed. Please try again.');
       setUploading(false);
     }
   }
@@ -81,12 +94,10 @@ const Upload = ({ onExtractionStart, onExtractComplete }) => {
       }
 
       const extractResponse = await extractInformation(uploadId);
-      toast.success('Extraction started. Processing document...');
-
       // Poll for results
       pollForResults(extractResponse.extraction_id);
     } catch (error) {
-      toast.error(error.message || 'Extraction failed. Please try again.');
+      setError(error.message || 'Extraction failed. Please try again.');
       setExtracting(false);
     }
   }
@@ -108,7 +119,6 @@ const Upload = ({ onExtractionStart, onExtractComplete }) => {
           setUploading(false);
           setFile(null);
           setUploadProgress(0);
-          toast.success('Extraction completed successfully!');
 
           if (onExtractComplete) {
             onExtractComplete(results);
@@ -117,19 +127,19 @@ const Upload = ({ onExtractionStart, onExtractComplete }) => {
           clearInterval(pollInterval);
           setExtracting(false);
           setUploading(false);
-          toast.error(`Extraction failed: ${results.error_message || 'Unknown error'}`);
+          setError(results.error_message || 'Extraction failed.');
         } else if (pollCount >= maxPolls) {
           clearInterval(pollInterval);
           setExtracting(false);
           setUploading(false);
-          toast.error('Extraction timed out. Please try again.');
+          setError('Extraction timed out. Please try again.');
         }
       } catch (error) {
         if (pollCount >= maxPolls) {
           clearInterval(pollInterval);
           setExtracting(false);
           setUploading(false);
-          toast.error('Could not retrieve extraction results.');
+          setError('Could not retrieve extraction results.');
         }
       }
     }, 1000);
@@ -200,6 +210,32 @@ const Upload = ({ onExtractionStart, onExtractComplete }) => {
             </div>
           )}
 
+          <div className="mb-3">
+            <label htmlFor="assignedUser" className="form-label">
+              Assign tender to user
+            </label>
+            <select
+              id="assignedUser"
+              value={assignedUserId}
+              onChange={(e) => setAssignedUserId(e.target.value)}
+              className="form-control"
+              disabled={uploading || extracting}
+            >
+              <option value="">Select user</option>
+              {users.map((user) => (
+                <option key={user.id} value={user.id}>
+                  {user.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {error && (
+            <div className="alert alert-danger mt-2">
+              {error}
+            </div>
+          )}
+
           <div className="mt-3">
             {uploading && (
               <div className="upload-status flex-center gap-2">
@@ -229,12 +265,6 @@ const Upload = ({ onExtractionStart, onExtractComplete }) => {
         </div>
       </div>
 
-      <ToastContainer
-        position="bottom-right"
-        autoClose={3000}
-        hideProgressBar={false}
-        newestOnTop={true}
-      />
     </div>
   );
 };

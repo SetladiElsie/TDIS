@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import Upload from './components/Upload';
 import Results from './components/Results';
+import ImportPanel from './components/ImportPanel';
 import { healthCheck } from './services/api';
-import { toast } from 'react-toastify';
 import './styles/App.css';
 import './styles/index.css';
 
@@ -11,9 +11,19 @@ function App() {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [apiReady, setApiReady] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [apiError, setApiError] = useState('');
+  const [importUrl, setImportUrl] = useState(null);
 
   useEffect(() => {
     checkAPI();
+  }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const url = params.get('downloadUrl') || params.get('download_url');
+    if (url) {
+      setImportUrl(url);
+    }
   }, []);
 
   async function checkAPI() {
@@ -23,8 +33,8 @@ function App() {
       setLoading(false);
     } catch (error) {
       setApiReady(false);
+      setApiError('❌ API is not running. Please start the backend server at http://localhost:5000');
       setLoading(false);
-      toast.error('❌ API is not running. Please start the backend server at http://localhost:5000');
     }
   }
 
@@ -54,24 +64,8 @@ function App() {
           <div className="header-content flex-between">
             <div>
               <h1 className="app-title">
-                📄 Tender Document Extraction
+                TIA-SOLUTIONS Tender Document Reader
               </h1>
-              <p className="app-subtitle">
-                Automatically extract key information from tender documents
-              </p>
-            </div>
-            <div className="header-status">
-              {apiReady ? (
-                <div className="status-badge status-success">
-                  <span className="status-dot"></span>
-                  API Connected
-                </div>
-              ) : (
-                <div className="status-badge status-error">
-                  <span className="status-dot"></span>
-                  API Offline
-                </div>
-              )}
             </div>
           </div>
         </div>
@@ -81,21 +75,31 @@ function App() {
       <main className="app-main">
         <div className="container">
           {/* API Error Message */}
-          {!apiReady && (
+          {!apiReady && apiError && (
             <div className="alert alert-danger mb-4">
-              ⚠️ The API server is not available. Please ensure the backend is running:
+              {apiError}
               <br />
               <code>python app.py</code>
             </div>
           )}
 
           {/* Upload Section */}
-          <section className="section">
-            <Upload
-              onExtractionStart={handleExtractionStart}
-              onExtractComplete={handleExtractComplete}
-            />
-          </section>
+          {importUrl ? (
+            <section className="section">
+              <ImportPanel
+                downloadUrl={importUrl}
+                onExtractionStart={handleExtractionStart}
+                onExtractComplete={handleExtractComplete}
+              />
+            </section>
+          ) : (
+            <section className="section">
+              <Upload
+                onExtractionStart={handleExtractionStart}
+                onExtractComplete={handleExtractComplete}
+              />
+            </section>
+          )}
 
           {/* Results Section */}
           {apiReady && (
