@@ -99,26 +99,22 @@ def extract_tender_id(text):
     - "SAMSA/RFI/004/2026/27"  standalone on cover
     - "BID NUMBER: BS/2026/RFB 568"
     """
-    # Normalise common PDF space artefacts before matching
     t = text
-    t = re.sub(r'(\d{2,3})\s+(\d{1,2})(?=[/\-])', r'\1\2', t)   # "202 6/" → "2026/", "00 4/" → "004/"
-    t = re.sub(r'(\d)\s+-\s*(\d)', r'\1-\2', t)                   # "26 -27" → "26-27"
+    t = re.sub(r'(\d{2,3})\s+(\d{1,2})(?=[/\-])', r'\1\2', t)
+    t = re.sub(r'(\d)\s+-\s*(\d)', r'\1-\2', t)
     t = re.sub(r'(RFQ|RFP|RFI|RFT|ITB)\s+(\d{1,3})\s+-\s*(\d{2}-\d{4})',
                r'\1 \2-\3', t, flags=re.IGNORECASE)
 
     patterns = [
-        # Explicit prefixed labels — most reliable
+        r'(?:tender|rfq|rfi|rfp|rft|itb|bid)\s+(?:no|number|reference)\s*[:\-]*\s*([A-Z0-9][A-Z0-9/\-. ]{2,40})',
+        r'reference\s+(?:nr|no|number)\s*[.:\s]+([A-Z0-9][A-Z0-9/\-. ]{2,40})',
         r'rfq\s+reference\s+number\s+((?:RFQ|RFP|RFI|RFT|ITB)[\s\-]\S[\S ]{1,35})',
         r'(?:rfi|rfq|rfp|rft|itb)\s+number\s*[:\s]+([\w/\-. ]{3,40})',
-        r'reference\s+(?:nr|no|number)\s*[.:\s]+([A-Z0-9][A-Z0-9/\-. ]{2,40})',
         r'tender\s+no\.?\s*[.:\s]+([A-Z0-9][\w/\-. ]{2,35})',
         r'bid\s+(?:number|no)\s*[.:\s]+([A-Z0-9][\w/\-. ]{2,35})',
         r'(?:rfq|rfp|rfi|rft|itb)\s+no\.?\s*[.:\s]*([\w/\-. ]{3,30})',
-        r'(?:request\s+for\s+(?:quotation|proposal|tender|information|bid)\s+no\.?'
-        r'|ref\.?\s*no\.?)\s*[.:\s]+([A-Z0-9][\w/\-. ]{2,35})',
-        # Standalone slash-separated ID on cover: "SAMSA/RFI/004/2026/27"
+        r'(?:request\s+for\s+(?:quotation|proposal|tender|information|bid)\s+no\.?|ref\.?\s*no\.?)\s*[.:\s]+([A-Z0-9][\w/\-. ]{2,35})',
         r'(?:^|\n)\s*([A-Z]{2,10}/[A-Z]{2,6}/[\w/\-]{4,30})',
-        # Bare RFQ/RFP token on cover line
         r'(?:^|\n)\s*((?:RFQ|RFP|RFI|RFT|ITB)[\s\-]\d[\w/\-. ]{2,25})(?:[\s\n]|$)',
     ]
 
@@ -127,23 +123,17 @@ def extract_tender_id(text):
         if not m:
             continue
         v = _cv(m.group(1)).strip()
-        # Post-processing cleanup
-        # Stop at CLOSING DATE or similar noise that indicates end of ID field
         v = re.sub(r'\s+CLOSING\s+DATE\b.*$', '', v, flags=re.IGNORECASE).strip()
         v = re.sub(r'\s+CLOSING\s+TIME\b.*$', '', v, flags=re.IGNORECASE).strip()
-        v = re.sub(r'(\d{3})\s+(\d{1})\b', r'\1\2', v)           # "202 6" → "2026"
-        v = re.sub(r'/\s+[A-Z].*$', '', v).strip()                # trailing "/ WORD"
+        v = re.sub(r'(\d{3})\s+(\d{1})\b', r'\1\2', v)
+        v = re.sub(r'/\s+[A-Z].*$', '', v).strip()
         v = v.rstrip('/ ')
-        v = re.sub(r'\s+[A-Z]{3,}(?:_[A-Z]+)+$', '', v).strip()  # "FACILITIES_ELEC"
-        v = re.sub(r'\s+\d+\s*\|.*$', '', v).strip()              # "1 | P a g e"
-        v = re.sub(r'(?<=\d{2})\s+\d{1}$', '', v).strip()         # trailing page digit
-        v = re.sub(r'(\d{4})\s+(\d{2,4})$', r'\1/\2', v).strip()  # "2026 27" → "2026/27"
+        v = re.sub(r'\s+[A-Z]{3,}(?:_[A-Z]+)+$', '', v).strip()
+        v = re.sub(r'\s+\d+\s*\|.*$', '', v).strip()
+        v = re.sub(r'(?<=\d{2})\s+\d{1}$', '', v).strip()
+        v = re.sub(r'(\d{4})\s+(\d{2,4})$', r'\1/\2', v).strip()
         v = re.sub(r'\b(RFQ|RFP|RFI|RFT|ITB)\s+NO\.?\s*', r'\1 ', v, flags=re.IGNORECASE)
-        # Strip trailing description words
-        v = re.sub(
-            r'\s+(?:SUPPLY|DELIVERY|CERTIFICATE|ELECTRICAL|MECHANICAL'
-            r'|AND\s+DELIVERY|FOR\s+FAWB|FOR\s+THE)\b.*$',
-            '', v, flags=re.IGNORECASE).strip()
+        v = re.sub(r'\s+(?:SUPPLY|DELIVERY|CERTIFICATE|ELECTRICAL|MECHANICAL|AND\s+DELIVERY|FOR\s+FAWB|FOR\s+THE)\b.*$', '', v, flags=re.IGNORECASE).strip()
         if re.search(r'\d', v) and 3 <= len(v) <= 50:
             return v
     return None
@@ -160,46 +150,69 @@ def extract_tender_name(text):
     - "DESCRIPTION APPOINTMENT OF A SERVICE PROVIDER..."
     - "PROJECT NAME/ DESCRIPTION OF GOODS, WORK OR SERVICES <value on next lines>"
     - "TENDER: RENEWAL, REGISTRATION AND SUPPLY OF..."
+    - "Description of Services: Provision of cleaning and waste management"
     - Title lines near top of document
     """
     lines = text.splitlines()
 
-    # ── 1. Explicit DESCRIPTION label ───────────────────────────────────────
-    desc_pat = re.compile(
-        r'^(?:DESCRIPTION\s*[:\s]|PROJECT\s+NAME[^\n]*DESCRIPTION[^\n]*$)',
+    tender_label_re = re.compile(
+        r'(?i)(?:tender|rfq|bid|reference)\s+(?:no|number|reference)\s*[:\-]?\s*.*?([A-Z0-9][A-Z0-9/\-. ]{2,40})\s*$'
+    )
+    for idx, line in enumerate(lines[:80]):
+        s = line.strip()
+        if not s:
+            continue
+        if re.search(r'(?i)(?:tender|rfq|bid|reference)\s+(?:no|number|reference)', s):
+            for offset in range(1, 6):
+                nxt = lines[idx + offset].strip() if idx + offset < len(lines) else ''
+                if not nxt:
+                    continue
+                if re.match(r'(?i)^(?:closing|issue|submission|briefing|contact|reference|bid\s+number|rfq\s+closing|tender\s+no|tender\s+number)', nxt):
+                    break
+                if re.match(r'(?i)^(?:description(?:\s+of\s+(?:services|goods|works|supplies))?|title|project\s+name|tender\s+name)\s*[:\-]', nxt):
+                    value = re.sub(r'(?i)^(?:description(?:\s+of\s+(?:services|goods|works|supplies))?|title|project\s+name|tender\s+name)\s*[:\-]\s*', '', nxt).strip()
+                    if value:
+                        return _cv(value)[:300]
+                if re.match(r'(?i)^(?:description(?:\s+of\s+(?:services|goods|works|supplies))?|title|project\s+name|tender\s+name)', nxt):
+                    value = re.sub(r'(?i)^(?:description(?:\s+of\s+(?:services|goods|works|supplies))?|title|project\s+name|tender\s+name)\s*', '', nxt).strip()
+                    if value:
+                        return _cv(value)[:300]
+
+    title_pat = re.compile(
+        r'^(?:TENDER\s+NAME|TITLE|DESCRIPTION(?:\s+OF\s+(?:SERVICES|GOODS|WORKS|SUPPLIES))?|PROJECT\s+NAME)\s*[:\-]\s*',
         re.IGNORECASE)
     for i, line in enumerate(lines[:60]):
-        if desc_pat.match(line.strip()):
-            # Value may be on same line or next non-blank lines
-            inline = re.sub(r'^(?:DESCRIPTION|PROJECT\s+NAME[^\n]*)\s*[:\s]*', '', line, flags=re.IGNORECASE).strip()
-            if len(inline) >= 20:
-                # Collect continuation lines
+        stripped = line.strip()
+        if title_pat.match(stripped):
+            inline = re.sub(r'^(?:TENDER\s+NAME|TITLE|DESCRIPTION(?:\s+OF\s+(?:SERVICES|GOODS|WORKS|SUPPLIES))?|PROJECT\s+NAME)\s*[:\-]\s*', '', stripped, flags=re.IGNORECASE).strip()
+            if inline:
                 result = inline
                 for j in range(i + 1, min(i + 5, len(lines))):
                     cont = lines[j].strip()
-                    if not cont or re.match(r'^[A-Z\s]{4,}[:\s]', cont):
+                    if not cont:
+                        break
+                    if re.match(r'^(?:ISSUE\s+DATE|CLOSING|BRIEFING|BID\s+NUMBER|PUBLISH|REFERENCE|SCOPE\s+OF\s+WORK|TERMS\s+OF\s+REFERENCE|ITEM\s+SPECIFICATION)', cont, re.IGNORECASE):
+                        break
+                    if re.match(r'^[A-Z\s]{4,}[:\-]', cont):
                         break
                     result += ' ' + cont
                 return _cv(result)[:300]
-            else:
-                # Value on next lines
-                result_lines = []
-                for j in range(i + 1, min(i + 6, len(lines))):
-                    cont = lines[j].strip()
-                    if not cont:
-                        if result_lines:
-                            break
-                        continue
-                    if re.match(r'^(?:ISSUE\s+DATE|CLOSING|BRIEFING|BID\s+NUMBER|PUBLISH)', cont, re.IGNORECASE):
-                        break
-                    result_lines.append(cont)
-                if result_lines:
-                    return _cv(' '.join(result_lines))[:300]
 
-    # ── 2. "TENDER: <title>" ─────────────────────────────────────────────────
+            result_lines = []
+            for j in range(i + 1, min(i + 6, len(lines))):
+                cont = lines[j].strip()
+                if not cont:
+                    if result_lines:
+                        break
+                    continue
+                if re.match(r'^(?:ISSUE\s+DATE|CLOSING|BRIEFING|BID\s+NUMBER|PUBLISH|REFERENCE|SCOPE\s+OF\s+WORK|TERMS\s+OF\s+REFERENCE|ITEM\s+SPECIFICATION)', cont, re.IGNORECASE):
+                    break
+                result_lines.append(cont)
+            if result_lines:
+                return _cv(' '.join(result_lines))[:300]
+
     m = re.search(r'^TENDER\s*:\s*(.+)', text, re.IGNORECASE | re.MULTILINE)
     if m:
-        # May span multiple lines
         start = m.start(1)
         snippet = text[start:start + 300]
         title_lines = []
@@ -211,7 +224,6 @@ def extract_tender_name(text):
         if title_lines:
             return _cv(' '.join(title_lines))[:300]
 
-    # ── 3. Keyword lines near top ────────────────────────────────────────────
     kw = re.compile(
         r'^(?:supply\s+(?:and\s+)?(?:delivery|installation)|provision\s+of'
         r'|appointment\s+of|procurement\s+of|request\s+for\s+(?:information|pricing)'
@@ -250,32 +262,23 @@ def extract_closing_date(text):
     - "BID NUMBER: ... CLOSING DATE: 04 September 2026 CLOSING TIME: 12:00"
     - "Closing Date 24 August 2026"
     - ISO: "CLOSING DATE : 2026/08/28"
+    - First-page cover: "CLOSING DATE: 31 August 2026"
     """
     _D = rf'\d{{1,2}}\s+(?:{_MONTHS})\s+\d{{4}}'
     _ISO = r'\d{4}[/\-]\d{1,2}[/\-]\d{1,2}'
     _NUM = r'\d{1,2}[/\-]\d{1,2}[/\-]\d{4}'
 
     patterns = [
-        # Most specific — doc-type labelled closing dates (highest priority)
-        rf'(?:rfq|rfp|rfi|rft|bid|tender)\s+closing\s+date\s+and\s+time\s*[:\s]+({_D})',
-        rf'(?:rfq|rfp|rfi|rft|bid|tender)\s+closing\s+date\s+and\s+time\s*[:\s]+({_ISO})',
-        rf'(?:rfq|rfp|rfi|rft|bid|tender)\s*closing\s+date\s*[:\s]+({_D})',
-        rf'(?:rfq|rfp|rfi|rft|bid|tender)\s*closing\s+date\s*[:\s]+({_ISO})',
-        # "RFQ CLOSING DETAILS Date: 06 August 2026"
+        rf'(?:(?:rfq|rfp|rfi|rft|bid|tender)\s+)?closing\s+date\s+and\s+time\s*[:\s]+({_D})',
+        rf'(?:(?:rfq|rfp|rfi|rft|bid|tender)\s+)?closing\s+date\s*[:\s]+({_D})',
+        rf'(?:(?:rfq|rfp|rfi|rft|bid|tender)\s+)?closing\s+date\s*[:\s]+({_ISO})',
         rf'closing\s+details\s+date[:\s]+({_D})',
         rf'closing\s+details\s+date[:\s]+({_ISO})',
-        # "CLOSING DATE AND TIME: 07 AUGUST 2026 AT 11H00"
-        rf'closing\s+date\s+and\s+time\s*[:\s]+({_D})',
-        rf'closing\s+date\s+and\s+time\s*[:\s]+(\d{{1,2}}\s+\w+\s+\d{{4}})',
-        # "CLOSE Date: Thursday 03 September 2026"
         rf'close\s+date\s*[:\s]+(?:(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\w*\s+)?({_D})',
-        # "PUBLISHED DATE: ... CLOSING DATE: ..." — capture the CLOSING part only
         rf'CLOSING\s+DATE\s*[:\s]*({_D})',
         rf'CLOSING\s+DATE\s*[:\s]*({_ISO})',
         rf'CLOSING\s+DATE\s*[:\s]*({_NUM})',
-        # "Due Date / Deadline"
         rf'(?:due\s+date|deadline)\s*[:\s]+({_D})',
-        # Contextual fallback — bare date near closing keyword
         rf'(?:close|closing|submission|deadline)[^\n]{{0,60}}\b({_D})\b',
     ]
 
@@ -283,7 +286,6 @@ def extract_closing_date(text):
         m = re.search(p, text, re.IGNORECASE)
         if m:
             v = _cv(m.group(1))[:60]
-            # Strip appended time info
             v = re.sub(r'\s+(?:at|AT)\s+\d[\d:hH]+.*$', '', v).strip()
             v = re.sub(r'\s+\d{1,2}[hH]\d{0,2}.*$', '', v).strip()
             v = re.sub(r'(\b\d{4}\b)\s+\D.*$', r'\1', v).strip()
@@ -304,17 +306,26 @@ def extract_briefing_session(text):
     - "BRIEFING SESSION DETAILS  Compulsory ... N/A  Non-compulsory ... N/A"
     - "COMPULSORY BRIEFING SESSION /SITE VISIT  Venue: ...  Date: 30 July 2026  Time: 10h00"
     - "COMPULSORY BRIEFING SESSION  N/A"  /  "COMPULSORY BRIEFING SESSION N/A"
+    - "BRIEFING SESSION: 10 September 2026 at 10:00"
     - Two sites: ATNS has two COMPULSORY BRIEFING SESSION blocks
     """
     lines = text.splitlines()
 
-    # Find first briefing session mention in first 100 lines
-    # Join adjacent short lines first to handle "COMPULSORY BRIEFING\nSESSION /SITE VISIT"
+    # First-page cover-page fallback: short, direct text like "BRIEFING SESSION: 10 September 2026 at 10:00"
+    for line in lines[:80]:
+        s = line.strip()
+        if re.search(r'briefing\s+session\s*[:\-]', s, re.IGNORECASE):
+            value = re.split(r'briefing\s+session\s*[:\-]', s, flags=re.IGNORECASE, maxsplit=1)[1].strip()
+            if value:
+                prefix = 'Briefing Session'
+                if re.search(r'compulsory', s, re.IGNORECASE):
+                    prefix = 'Compulsory Briefing Session'
+                return f'{prefix}: {value}'
+
     joined_lines = []
     i = 0
     while i < min(len(lines), 100):
         s = lines[i].strip()
-        # If line ends with BRIEFING, peek at next line for SESSION
         if re.search(r'\bBRIEFING\s*$', s, re.IGNORECASE) and i + 1 < len(lines):
             s = s + ' ' + lines[i + 1].strip()
             i += 2
@@ -331,8 +342,6 @@ def extract_briefing_session(text):
     if briefing_idx is None:
         return None
 
-    # Collect the block until a stopping keyword (from original lines)
-    # Map back to original line index (approximate: briefing_idx maps to ~briefing_idx)
     orig_start = min(briefing_idx, len(lines) - 1)
     block_lines = []
     for line in lines[orig_start:orig_start + 40]:
@@ -344,13 +353,11 @@ def extract_briefing_session(text):
     block = '\n'.join(block_lines)
     compulsory = bool(re.search(r'compulsory', block, re.IGNORECASE))
 
-    # N/A — no briefing
     if re.search(r'N/A', block) and not re.search(r'(?:Date|Venue)\s*:', block, re.IGNORECASE):
         if compulsory:
             return 'No compulsory briefing session'
         return 'No briefing session required'
 
-    # Parse venue/date/time blocks (may be multiple sites)
     sessions = []
     current = {}
     for s in block_lines:
@@ -369,7 +376,7 @@ def extract_briefing_session(text):
         elif tm:
             current['time'] = tm.group(1).strip()
         elif current.get('venue') and not current.get('date') and len(s) < 60:
-            current['venue'] += ', ' + s  # address continuation
+            current['venue'] += ', ' + s
     if current.get('venue') or current.get('date'):
         sessions.append(current)
 
@@ -443,11 +450,51 @@ def extract_scope_of_work(sections):
         ))
         return toc / len(sample) >= 0.4
 
+    def _stop_before_next_section(body):
+        lines = body.splitlines()
+        kept = []
+        for line in lines:
+            s = line.strip()
+            if not s:
+                kept.append('')
+                continue
+
+            if re.match(r'^(?:\d+[\.\d]*\s+)?(?:COMPULSORY|MANDATORY|DELIVERABLES|EVALUATION|SUBMISSION|CONTACT|CLOSING|BACKGROUND|PURPOSE|VALIDITY|DATE|ANNEX|GENERAL|PAYMENT|PRICING|BID|FORM|INVITATION)\b', s, re.IGNORECASE):
+                break
+
+            if re.match(r'^(?:\d+[\.\d]*\s+)?(?:TERMS\s+OF\s+REFERENCE|TECHNICAL\s+SPECIFICATION(?:S)?|ITEM\s+SPECIFICATION(?:S)?|SPECIFICATION(?:S)?|SCOPE\s+OF\s+WORK(?:S|/SUPPLY)?|SCOPE\s+OF\s+SUPPLY)\b', s, re.IGNORECASE):
+                # This is part of the scope narrative; keep it so adjacent sections are merged.
+                kept.append(s)
+                continue
+
+            if re.match(r'^(?:[A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){1,5})\s*:\s*.*$', s) and len(s.split()) >= 2:
+                if re.search(r'\b(?:Compulsory|Mandatory|Deliverables|Evaluation|Submission|Contact|Closing|Background|Purpose|Validity|Date|Annex|General|Payment|Pricing|Bid|Form|Invitation)\b', s, re.IGNORECASE):
+                    break
+            kept.append(s)
+        return _clean_scope_body('\n'.join(kept)).strip()
+
+    _INLINE_SCOPE = re.compile(
+        r'(?:^|\n)[ \t]*(?:\d+[\.\d]*[ \t]+)?'
+        r'(?:SCOPE\s+OF\s+WORK(?:S|/SUPPLY)?'
+        r'|TERMS\s+OF\s+REFERENCE(?:\s*/\s*SCOPE\s+OF\s+WORKS?|/SPECIFICATIONS?)?'
+        r'|TECHNICAL\s+SPECIFICATION(?:S)?'
+        r'|ITEM\s+SPECIFICATION(?:S)?(?:\s*/\s*(?:TERMS\s+OF\s+REFERENCE|SCOPE\s+OF\s+WORK))?)'
+        r'\s*[:\-]?\s*(.+?)(?=\n\s*(?:\d+[\.\d]*\s+)?(?:COMPULSORY|MANDATORY|DELIVERABLES|EVALUATION|SUBMISSION|CONTACT|CLOSING|BACKGROUND|PURPOSE|VALIDITY|DATE|ANNEX|GENERAL|PAYMENT|PRICING|BID|FORM|INVITATION)\b|\Z)',
+        re.IGNORECASE | re.DOTALL)
+
+    inl = _INLINE_SCOPE.search(full)
+    if inl:
+        body = _stop_before_next_section(inl.group(1))
+        if not _is_junk(body) and len(body) >= 25:
+            return body
+
     # ── Heading patterns to search for in full text ──────────────────────────
     _SCOPE_HEADINGS = re.compile(
         r'(?:^|\n)[ \t]*(?:\d+[\.\d]*[ \t]+)?'
         r'(?:SCOPE\s+OF\s+WORK(?:S|/SUPPLY)?'
         r'|TERMS\s+OF\s+REFERENCE(?:\s*/\s*SCOPE\s+OF\s+WORKS?|/SPECIFICATIONS?)?'
+        r'|TECHNICAL\s+SPECIFICATION(?:S)?'
+        r'|ITEM\s+SPECIFICATION(?:S)?(?:\s*/\s*(?:TERMS\s+OF\s+REFERENCE|SCOPE\s+OF\s+WORK))?'
         r'|SPECIFICATION(?:S)?\s*(?:\([^\n]{0,60})?'
         r'|SCOPE\s+OF\s+SUPPLY'
         r'|INTRODUCTION\s+AND\s+SCOPE)'
@@ -460,6 +507,7 @@ def extract_scope_of_work(sections):
     )
 
     pos = 0
+    scope_candidates = []
     while True:
         m = _SCOPE_HEADINGS.search(full, pos)
         if not m:
@@ -467,7 +515,6 @@ def extract_scope_of_work(sections):
 
         after = full[m.end():]
 
-        # Reject form-section markers
         first = re.search(r'\S', after)
         if first:
             snippet = after[first.start():first.start() + 80]
@@ -475,19 +522,49 @@ def extract_scope_of_work(sections):
                 pos = m.end()
                 continue
 
-        # Reject ToC
         if _is_toc(after):
             pos = m.end()
             continue
 
-        stop = _NEXT_SECTION.search(after)
-        body = after[:stop.start()] if stop else after[:15000]
-        body = _clean_scope_body(body)
+        scope_heading_pattern = re.compile(
+            r'^(?:\d+[\.\d]*\s+)?(?:SCOPE\s+OF\s+WORK(?:S|/SUPPLY)?'
+            r'|TERMS\s+OF\s+REFERENCE(?:\s*/\s*SCOPE\s+OF\s+WORKS?|/SPECIFICATIONS?)?'
+            r'|TECHNICAL\s+SPECIFICATION(?:S)?'
+            r'|ITEM\s+SPECIFICATION(?:S)?(?:\s*/\s*(?:TERMS\s+OF\s+REFERENCE|SCOPE\s+OF\s+WORK))?'
+            r'|SPECIFICATION(?:S)?\s*(?:\([^\n]{0,60})?'
+            r'|SCOPE\s+OF\s+SUPPLY'
+            r'|INTRODUCTION\s+AND\s+SCOPE)\b',
+            re.IGNORECASE,
+        )
 
-        if not _is_junk(body) and len(body) >= 50:
-            return body
+        def _next_non_scope_index(text):
+            lines = text.splitlines()
+            for idx, line in enumerate(lines):
+                s = line.strip()
+                if not s:
+                    continue
+                if scope_heading_pattern.match(s):
+                    continue
+                if re.match(r'^(?:\d+[\.\d]*\s+)?(?:COMPULSORY|MANDATORY|DELIVERABLES|EVALUATION|SUBMISSION|CONTACT|CLOSING|REFERENCE|BACKGROUND|PURPOSE|VALIDITY|DATE|ANNEX|GENERAL|PAYMENT|PRICING|BID|FORM|INVITATION)', s, re.IGNORECASE):
+                    return idx
+                if re.match(r'^(?:[A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+){1,5})\s*:\s*', s) and len(s.split()) >= 2:
+                    if re.search(r'\b(?:Compulsory|Mandatory|Deliverables|Evaluation|Submission|Contact|Closing|Background|Purpose|Validity|Date|Annex|General|Payment|Pricing|Bid|Form|Invitation)\b', s, re.IGNORECASE):
+                        return idx
+            return None
+
+        next_idx = _next_non_scope_index(after)
+        body = '\n'.join(after.splitlines()[:next_idx]) if next_idx is not None else after[:15000]
+        body = _stop_before_next_section(body)
+
+        if not _is_junk(body) and len(body) >= 25:
+            scope_candidates.append(body)
 
         pos = m.end()
+
+    if scope_candidates:
+        combined = '\n\n'.join(scope_candidates)
+        if len(combined.strip()) >= 25:
+            return _clean_scope_body(combined)
 
     # ── Fallback: terms of reference section ────────────────────────────────
     tor_body = _section_body(full,
@@ -620,44 +697,52 @@ def extract_organization(text):
     - "South African Post Office Limited"
     - "THE SOUTH AFRICAN MARITIME SAFETY AUTHORITY (SAMSA)" in title line
     - "ROAD ACCIDENT FUND (RAF)"
+    - First-page cover text such as "CITY OF CAPE TOWN"
     """
     lines = text.splitlines()
 
-    # ── 1. Explicit "From:" label ────────────────────────────────────────────
+    for line in lines[:30]:
+        s = line.strip()
+        if not s:
+            continue
+        if re.search(r'^(?:request\s+for\s+(?:quotation|proposal|tender)|invitation\s+to\s+bid|rfq|rfp|rfi|rft|bid)', s, re.IGNORECASE):
+            continue
+        if re.search(r'^(?:tender\s+no|rfq\s+no|bid\s+number|closing\s+date|briefing\s+session|submission\s+date|reference\s+no)', s, re.IGNORECASE):
+            continue
+        if len(s) >= 5 and len(s) <= 160 and not re.search(r'^(?:page\s+\d+|\d+\s*\||\d+\s*$)', s, re.IGNORECASE):
+            if re.search(r'\b(?:agency|authority|municipality|institute|university|college|department|ministry|fund|seta|council|board|commission|corporation|limited|soc\s+ltd|city\s+of|province\s+of|government)\b', s, re.IGNORECASE):
+                return _cv(s)
+            if s.isupper() and len(s.split()) >= 2 and len(s) <= 120:
+                return _cv(s)
+
     m = re.search(r'^From\s*:\s*(.{5,150})', text, re.IGNORECASE | re.MULTILINE)
     if m:
         v = _cv(m.group(1)).strip().rstrip('.')
         if 5 <= len(v) <= 200 and not _GC_JUNK.search(v):
             return v
 
-    # ── 2. "Requirements of THE <Org>" ──────────────────────────────────────
     m = re.search(r'requirements\s+of\s+the\s+([A-Z][A-Za-z\s\-&]{5,80}?)(?:\s*\n|\s{3,})', text, re.IGNORECASE)
     if m:
         v = _cv(m.group(1)).strip().rstrip('.,')
         if 5 <= len(v) <= 150 and not _GC_JUNK.search(v):
             return v
 
-    # ── 3. Org name in parentheses acronym form: "THE SOUTH AFRICAN MARITIME SAFETY AUTHORITY (SAMSA)"
     m = re.search(r'(?:THE\s+)?([A-Z][A-Z\s\-&]{5,80}?)\s*\(([A-Z]{2,8})\)', text)
     if m:
         full_name = _cv(m.group(1)).strip()
         acronym = m.group(2)
-        # Must look like an org name (has typical org words or is near top)
         if (re.search(r'\b(?:authority|agency|fund|institute|board|municipality|department|seta|council|company|corporation|limited)\b', full_name, re.IGNORECASE)
                 and len(full_name) >= 10):
             return f"{full_name} ({acronym})"
 
-    # ── 4. "invited to submit proposal to the <Org>" ────────────────────────
     m = re.search(r'(?:invited\s+to\s+(?:submit|bid)\s+(?:proposal|quotation)\s+to\s+the\s+)([A-Z][A-Za-z\s\-&]{5,80})', text, re.IGNORECASE)
     if m:
         v = _cv(m.group(1)).strip()
-        # Stop at prepositions that indicate the org name has ended
         v = re.sub(r'\s+(?:for\s+the|to\s+supply|limited\s+for\b|soc\s+ltd\s+for\b).*$', '', v, flags=re.IGNORECASE).strip()
         v = v.rstrip('.,')
         if 5 <= len(v) <= 150 and not _GC_JUNK.search(v):
             return v
 
-    # ── 5. Cover-page org name — prominent lines near top ────────────────────
     skip = re.compile(
         r'^(?:page\s+\d+|p\s+a\s+g\s+e|request\s+for|rfq|rfp|rfi|rft'
         r'|invitation\s+to\s+bid|republic\s+of\s+south\s+africa'
@@ -667,7 +752,7 @@ def extract_organization(text):
     org_kw = re.compile(
         r'\b(?:agency|authority|municipality|institute|university|college'
         r'|department|ministry|fund|seta|council|board|commission'
-        r'|corporation|limited|soc\s+ltd|soc\.?\s*ltd\.?|pty\s+ltd|npc)\b',
+        r'|corporation|limited|soc\s+ltd|soc\.?\s*ltd\.?|pty\s+ltd|npc|city\s+of|province\s+of)\b',
         re.IGNORECASE)
     for line in lines[:25]:
         s = line.strip()
@@ -1102,7 +1187,12 @@ def _split_inline_items(value):
     if not value:
         return []
     parts = re.split(r'\s*(?:,|;|/|\band\b)\s*', value, flags=re.IGNORECASE)
-    return [p.strip(' ,;') for p in parts if p.strip(' ,;') and p.strip().lower() != 'and']
+    cleaned = []
+    for p in parts:
+        item = p.strip(' \n\r\t,;')
+        if item and item.lower() != 'and':
+            cleaned.append(item)
+    return cleaned
 
 
 def extract_compulsory_documents(sections):
@@ -1110,7 +1200,14 @@ def extract_compulsory_documents(sections):
     full = sections.get('full', '')
     body = sections.get('compulsory', '')
 
-    if not body:
+    inline_match = re.search(
+        r'(?:^|\n)\s*(?:\d+[\.\d]*\s+)?(?:COMPULSORY|MANDATORY)\s+(?:DOCUMENTS?|RETURNABLES?|REQUIREMENTS?)\s*[:\-]?\s*(.+?)(?=\n\s*(?:\d+[\.\d]*\s+)?(?:DELIVERABLES?|EVALUATION|SUBMISSION|CONTACT|CLOSING|REFERENCE|BACKGROUND|PURPOSE)\b|\Z)',
+        full,
+        re.IGNORECASE | re.DOTALL
+    )
+    if inline_match:
+        body = inline_match.group(1).strip()
+    elif not body:
         m = re.search(r'(?:mandatory\s+requirement|compulsory\s+(?:returnable|document))', full, re.IGNORECASE)
         if m:
             start = full.find('\n', m.end())
@@ -1118,6 +1215,11 @@ def extract_compulsory_documents(sections):
 
     if not body:
         return []
+
+    if re.search(r'[,;]|\band\b', body, re.IGNORECASE):
+        docs = [p.strip(' ,;') for p in _split_inline_items(body) if p.strip(' ,;')]
+        if docs:
+            return docs[:10]
 
     items = re.findall(
         r'(?:^|\n)\s*(?:[ivxIVX]{1,5}[.)]\s+|[a-zA-Z][.)]\s+|\d+[.)]\s+|[-•*?]\s*)(.{10,200})',
@@ -1131,6 +1233,23 @@ def extract_deliverables(sections):
     sections = _coerce_sections(sections)
     body = _sec('specifications', 'deliverables', 'pricing', sections=sections)
     full = sections.get('full', '')
+
+    def _pick_inline(value):
+        if not value:
+            return []
+        if re.search(r'[,;]|\band\b', value, re.IGNORECASE):
+            return [p.strip(' ,;') for p in _split_inline_items(value) if p.strip(' ,;')]
+        return []
+
+    inline = re.search(
+        r'(?:^|\n)\s*(?:\d+[\.\d]*\s+)?DELIVERABLES?\s*[:\-]?\s*(.+?)(?=\n\s*(?:\d+[\.\d]*\s+)?(?:COMPULSORY|MANDATORY|EVALUATION|SUBMISSION|CONTACT|CLOSING|REFERENCE|BACKGROUND|PURPOSE)\b|\Z)',
+        full,
+        re.IGNORECASE | re.DOTALL
+    )
+    if inline:
+        items = _pick_inline(inline.group(1))
+        if items:
+            return items[:8]
 
     items = re.findall(
         r'(?:^|\n)\s*(?:•\s*|-\s*)([A-Z][^\n]{10,120})',

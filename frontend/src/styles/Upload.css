@@ -2,25 +2,52 @@
   margin-bottom: 2rem;
 }
 
+.card {
+  background: #f7f5f2;
+  border: 1px solid #d9d1c7;
+  box-shadow: none;
+  padding: 1.1rem 1.2rem 1rem;
+  border-radius: 0.9rem;
+  max-width: none;
+  margin: 0;
+}
+
+.card-header {
+  padding-bottom: 0.8rem;
+  margin-bottom: 0.8rem;
+  border-bottom: 1px solid #e0d9d0;
+  font-size: 0.95rem;
+  color: #283649;
+  font-weight: 700;
+  display: block;
+}
+
+.card-body {
+  padding: 0 !important;
+}
+
 .dropzone {
-  border: 2px dashed var(--border);
-  border-radius: 0.75rem;
-  padding: 2rem;
+  border: 1.5px dashed #800080;
+  border-radius: 0.25rem;
+  padding: 1rem 1.1rem;
   text-align: center;
   cursor: pointer;
-  transition: all 0.3s ease;
-  background-color: #f9fafb;
+  transition: all 0.2s ease;
+  background-color: #f5e6f5;
+  margin-bottom: 1rem;
+  box-shadow: none;
 }
 
 .dropzone:hover {
-  border-color: var(--primary);
-  background-color: #eff6ff;
+  border-color: #660066;
+  background-color: #f0d7f0;
 }
 
 .dropzone.active {
-  border-color: var(--primary);
-  background-color: #dbeafe;
-  transform: scale(1.01);
+  border-color: #800080;
+  background-color: #ebd0eb;
+  transform: none;
+  box-shadow: none;
 }
 
 .dropzone.disabled {
@@ -33,26 +60,69 @@
 }
 
 .dropzone-icon {
-  font-size: 3rem;
-  margin-bottom: 1rem;
+  font-size: 2.1rem;
+  margin-bottom: 0.7rem;
+  opacity: 0.8;
+  display: block;
 }
 
 .dropzone-title {
-  font-size: 1.1rem;
+  font-size: 0.98rem;
   font-weight: 600;
-  color: var(--dark);
-  margin-bottom: 0.5rem;
+  color: #800080;
+  margin-bottom: 0.35rem;
 }
 
 .dropzone-subtitle {
-  color: var(--text-light);
-  margin-bottom: 1rem;
+  color: #5a005a;
+  margin-bottom: 0.5rem;
+  font-size: 0.82rem;
 }
 
 .dropzone-formats {
+  font-size: 0.75rem;
+  color: #7a7d82;
+  font-style: italic;
+}
+
+.upload-box {
+  display: none;
+}
+
+.file-preview {
+  border: 1px solid #d9d9d9;
+  border-radius: 0;
+  padding: 1rem;
+  background: #ffffff;
+  margin: 0.75rem 0 0;
+}
+
+.file-preview-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.file-icon {
+  font-size: 2rem;
+  min-width: 3rem;
+}
+
+.file-info {
+  flex: 1;
+  text-align: left;
+}
+
+.file-name {
+  font-weight: 500;
+  color: var(--dark);
+  word-break: break-word;
+}
+
+.file-size {
   font-size: 0.85rem;
   color: var(--text-light);
-  font-style: italic;
+  margin-top: 0.25rem;
 }
 
 /* File Preview */

@@ -133,7 +133,7 @@ _SECTION_HEADINGS = [
     ('background',     r'^\s*(?:\d+[\.\s]+)?background\b'),
     ('scope',          r'^\s*(?:\d+[\.\s]+)?scope\s+of\s+work\b'),
     ('objective',      r'^\s*(?:\d+[\.\s]+)?objective[s]?\b'),
-    ('specifications', r'^\s*(?:\d+[\.\s]+)?(?:specification[s]?(?:\s*/\s*terms\s+of\s+reference|\s*\(please[^)]*\))?|terms\s+of\s+reference)\b'),
+    ('specifications', r'^\s*(?:\d+[\.\s]+)?(?:item\s+specification(?:s)?|specification[s]?(?:\s*/\s*terms\s+of\s+reference|\s*\(please[^)]*\))?|terms\s+of\s+reference)\b'),
     ('evaluation',     r'^\s*(?:\d+[\.\s]+)?evaluation'),
     ('compulsory',     r'^\s*(?:\d+[\.\s]+)?(?:compulsory|mandatory)\s+(?:documents?|requirements?|returnables?|sites?|briefings?)'),
     ('submission',     r'^\s*(?:\d+[\.\s]+)?(?:submission|how\s+to\s+(?:bid|submit)|bidding\s+procedure)'),

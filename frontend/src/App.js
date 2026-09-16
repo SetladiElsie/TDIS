@@ -13,6 +13,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [apiError, setApiError] = useState('');
   const [importUrl, setImportUrl] = useState(null);
+  const [tenderCount, setTenderCount] = useState(0);
 
   useEffect(() => {
     checkAPI();
@@ -62,11 +63,11 @@ function App() {
       <header className="app-header">
         <div className="container">
           <div className="header-content flex-between">
-            <div>
-              <h1 className="app-title">
-                TIA-SOLUTIONS Tender Document Reader
-              </h1>
+            <div className="brand-wrap">
+              <div className="brand-mark">T</div>
+              <h1 className="app-title">Tender Extraction Portal</h1>
             </div>
+            <div className="header-count">{tenderCount} tender{tenderCount === 1 ? '' : 's'}</div>
           </div>
         </div>
       </header>
@@ -83,7 +84,6 @@ function App() {
             </div>
           )}
 
-          {/* Upload Section */}
           {importUrl ? (
             <section className="section">
               <ImportPanel
@@ -104,7 +104,11 @@ function App() {
           {/* Results Section */}
           {apiReady && (
             <section className="section">
-              <Results data={extractedData} refreshTrigger={refreshTrigger} />
+              <Results
+                data={extractedData}
+                refreshTrigger={refreshTrigger}
+                onResultsCountChange={setTenderCount}
+              />
             </section>
           )}
         </div>
@@ -113,23 +117,8 @@ function App() {
       {/* Footer */}
       <footer className="app-footer">
         <div className="container">
-          <div className="footer-content">
-            <div className="footer-section">
-              <h4>About</h4>
-              <p>Tender Document Extraction Application v1.0.0</p>
-            </div>
-            <div className="footer-section">
-              <h4>Supported Formats</h4>
-              <p>PDF, DOCX, TXT, CSV, XLSX</p>
-            </div>
-            <div className="footer-section">
-              <h4>Support</h4>
-              <p>For issues, check the documentation or contact the development team</p>
-            </div>
-          </div>
-          <div className="footer-divider"></div>
           <div className="footer-bottom">
-            <p>&copy; 2026 Tender Document Extraction. All rights reserved.</p>
+            <p>&copy; 2026 Tender Extraction Portal. All rights reserved.</p>
           </div>
         </div>
       </footer>

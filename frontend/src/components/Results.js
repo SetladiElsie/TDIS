@@ -1,20 +1,24 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { listResults, getResults, updateResult } from '../services/api';
+import { listResults, getResults, updateResult, getUsers, uploadSupportingDocuments, deleteSupportingDocument, deleteResult } from '../services/api';
 import { parseExtractionData, formatSouthAfricanPhone } from '../utils/helpers';
 import '../styles/Results.css';
 
-const Results = ({ data, refreshTrigger }) => {
+const Results = ({ data, refreshTrigger, onResultsCountChange }) => {
   const [results, setResults] = useState([]);
+  const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
   const [expandedData, setExpandedData] = useState({});
   const [loadingId, setLoadingId] = useState(null);
   const [loadError, setLoadError] = useState('');
   const [statusUpdateError, setStatusUpdateError] = useState('');
+  const [userUpdateError, setUserUpdateError] = useState('');
   const [page, setPage] = useState(1);
   const [totalResults, setTotalResults] = useState(0);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [userFilter, setUserFilter] = useState('');
+  const [contextMenu, setContextMenu] = useState({ visible: false, x: 0, y: 0, extractionId: null, status: null });
 
   const itemsPerPage = 10;
 
@@ -27,20 +31,101 @@ const Results = ({ data, refreshTrigger }) => {
         limit: itemsPerPage,
         search: search || undefined,
         status: statusFilter || undefined,
+        assigned_user_id: userFilter || undefined,
       };
       const response = await listResults(params);
-      setResults(response.results || []);
-      setTotalResults(response.total || 0);
+      const nextResults = response.results || [];
+      const nextTotal = response.total || 0;
+
+      setResults(nextResults);
+      setTotalResults(nextTotal);
+      if (onResultsCountChange) {
+        onResultsCountChange(nextTotal);
+      }
     } catch (error) {
       setLoadError('Failed to load results: ' + error.message);
     } finally {
       setLoading(false);
     }
-  }, [page, search, statusFilter]);
+  }, [page, search, statusFilter, userFilter, onResultsCountChange]);
+
+  const loadUsers = useCallback(async () => {
+    try {
+      const availableUsers = await getUsers();
+      setUsers(availableUsers || []);
+    } catch (error) {
+      setUsers([]);
+    }
+  }, []);
 
   useEffect(() => {
     loadResults();
-  }, [loadResults, refreshTrigger]);
+    loadUsers();
+  }, [loadResults, loadUsers, refreshTrigger]);
+
+  useEffect(() => {
+    const handleGlobalClick = () => setContextMenu({ visible: false, x: 0, y: 0, extractionId: null, status: null });
+
+    window.addEventListener('click', handleGlobalClick);
+    return () => {
+      window.removeEventListener('click', handleGlobalClick);
+    };
+  }, []);
+
+  const openContextMenu = (event, extractionId, status) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setContextMenu({
+      visible: true,
+      x: event.clientX,
+      y: event.clientY,
+      extractionId,
+      status,
+    });
+  };
+
+  const handleRestoreTender = async (extractionId) => {
+    try {
+      const updated = await updateResult(extractionId, { status: 'processing' });
+      setResults((prev) => prev.filter((item) => item.extraction_id !== extractionId));
+      setExpandedData((prev) => ({
+        ...prev,
+        [extractionId]: { ...(prev[extractionId] || {}), status: updated.status },
+      }));
+      setContextMenu({ visible: false, x: 0, y: 0, extractionId: null, status: null });
+    } catch (err) {
+      setStatusUpdateError(err.message || 'Could not restore tender.');
+    }
+  };
+
+  const handleArchiveTender = async (extractionId) => {
+    try {
+      const updated = await updateResult(extractionId, { status: 'archived' });
+      setResults((prev) => prev.filter((item) => item.extraction_id !== extractionId));
+      setExpandedData((prev) => ({
+        ...prev,
+        [extractionId]: { ...(prev[extractionId] || {}), status: updated.status },
+      }));
+      setContextMenu({ visible: false, x: 0, y: 0, extractionId: null, status: null });
+    } catch (err) {
+      setStatusUpdateError(err.message || 'Could not archive tender.');
+    }
+  };
+
+  const handleDeleteTender = async (extractionId) => {
+    try {
+      await deleteResult(extractionId);
+      setResults((prev) => prev.filter((item) => item.extraction_id !== extractionId));
+      setExpandedData((prev) => {
+        const next = { ...prev };
+        delete next[extractionId];
+        return next;
+      });
+      setContextMenu({ visible: false, x: 0, y: 0, extractionId: null, status: null });
+    } catch (err) {
+      setStatusUpdateError(err.message || 'Could not delete tender.');
+    }
+  };
 
   async function toggleExpand(extractionId) {
     // Collapse if already open
@@ -68,6 +153,42 @@ const Results = ({ data, refreshTrigger }) => {
 
   const totalPages = Math.ceil(totalResults / itemsPerPage);
 
+  const handleSupportingDocumentUpload = async (event, extractionId) => {
+    const files = Array.from(event.target.files || []);
+    if (!files.length) return;
+
+    const formData = new FormData();
+    files.forEach((file) => formData.append('files', file));
+
+    try {
+      const response = await uploadSupportingDocuments(extractionId, formData);
+      const savedDocs = response.supporting_documents || [];
+
+      setExpandedData((prev) => ({
+        ...prev,
+        [extractionId]: { ...(prev[extractionId] || {}), supporting_documents: savedDocs },
+      }));
+    } catch (error) {
+      setStatusUpdateError(error.message || 'Could not upload supporting documents.');
+    } finally {
+      event.target.value = '';
+    }
+  };
+
+  const handleDeleteSupportingDocument = async (extractionId, documentId) => {
+    try {
+      const response = await deleteSupportingDocument(extractionId, documentId);
+      const savedDocs = response.supporting_documents || [];
+
+      setExpandedData((prev) => ({
+        ...prev,
+        [extractionId]: { ...(prev[extractionId] || {}), supporting_documents: savedDocs },
+      }));
+    } catch (error) {
+      setStatusUpdateError(error.message || 'Could not delete supporting document.');
+    }
+  };
+
   return (
     <div className="results-container">
       <h2 className="section-title">📋 Extraction Results</h2>
@@ -93,6 +214,21 @@ const Results = ({ data, refreshTrigger }) => {
             <option value="completed">Completed</option>
             <option value="processing">Processing</option>
             <option value="failed">Failed</option>
+            <option value="archived">Archived</option>
+            <option value="deleted">Deleted</option>
+          </select>
+        </div>
+        <div className="filter-select">
+          <select
+            value={userFilter}
+            onChange={(e) => { setUserFilter(e.target.value); setPage(1); }}
+            className="form-control"
+          >
+            <option value="">All Users</option>
+            <option value="unassigned">Unassigned</option>
+            {users.map((user) => (
+              <option key={user.id} value={user.id}>{user.name}</option>
+            ))}
           </select>
         </div>
       </div>
@@ -113,12 +249,39 @@ const Results = ({ data, refreshTrigger }) => {
         </div>
       ) : (
         <>
+          {contextMenu.visible && (
+            <div
+              className="result-context-menu"
+              style={{ left: contextMenu.x, top: contextMenu.y }}
+              onClick={(event) => event.stopPropagation()}
+            >
+              {contextMenu.status === 'archived' || contextMenu.status === 'deleted' ? (
+                <button type="button" className="context-menu-item" onClick={() => handleRestoreTender(contextMenu.extractionId)}>
+                  Restore
+                </button>
+              ) : (
+                <>
+                  <button type="button" className="context-menu-item" onClick={() => handleArchiveTender(contextMenu.extractionId)}>
+                    Archive
+                  </button>
+                  <button type="button" className="context-menu-item" onClick={() => handleDeleteTender(contextMenu.extractionId)}>
+                    Delete
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+
           <div className="results-list">
             {results.map((result) => {
               const isOpen = expandedId === result.extraction_id;
               const isLoadingThis = loadingId === result.extraction_id;
               const full = expandedData[result.extraction_id];
               const parsedData = full ? parseExtractionData(full.extracted_data) : null;
+
+              const tenderDocumentUrl = result.upload_id
+                ? `${(process.env.REACT_APP_API_URL || 'http://localhost:5000/api').replace(/\/+$/, '')}/uploads/${result.upload_id}/file`
+                : '';
 
               return (
                 <div
@@ -129,20 +292,40 @@ const Results = ({ data, refreshTrigger }) => {
                   <div
                     className="result-row"
                     onClick={() => toggleExpand(result.extraction_id)}
+                    onContextMenu={(event) => openContextMenu(event, result.extraction_id, result.status)}
                   >
                     <div className="result-header">
                       <div className="result-title-group">
-                        <h3 className="result-title truncate">{result.tender_name}</h3>
+                        <h3 className="result-title">{result.tender_name}</h3>
                         <div className="result-meta">
                           <div className="meta-item">
                             <span className="meta-label">Assigned</span>
                             <span className="meta-value">{result.assigned_user_name || 'Unassigned'}</span>
                           </div>
+                          {result.upload_id && (
+                            <div className="meta-item">
+                              <span className="meta-label">Tender Document</span>
+                              <a
+                                className="result-original-document"
+                                href={tenderDocumentUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(event) => event.stopPropagation()}
+                              >
+                                📄 {result.filename || 'Original Tender'}
+                              </a>
+                            </div>
+                          )}
                         </div>
                       </div>
                       <div className="result-header-right">
-                        <div className={`form-control result-status status-${result.status}`}>
-                          {result.status}
+                        <div className="result-status-stack">
+                          <div className={`form-control result-status status-${result.status}`}>
+                            {result.status}
+                          </div>
+                          <div className="result-total-bid-price">
+                            {result.total_bid_price ? `Bid: ${result.total_bid_price}` : 'Bid: —'}
+                          </div>
                         </div>
                         <span className={`accordion-arrow ${isOpen ? 'open' : ''}`}>▾</span>
                       </div>
@@ -174,6 +357,10 @@ const Results = ({ data, refreshTrigger }) => {
                               <div className="detail-item">
                                 <span className="detail-label">Organisation</span>
                                 <span className="detail-value">{parsedData.organization || '—'}</span>
+                              </div>
+                              <div className="detail-item">
+                                <span className="detail-label">Closing Date</span>
+                                <span className="detail-value">{parsedData.closing_date_formatted || parsedData.closing_date || '—'}</span>
                               </div>
                             </div>
                           </div>
@@ -277,13 +464,54 @@ const Results = ({ data, refreshTrigger }) => {
                             <div className="detail-grid">
                               <div className="detail-item">
                                 <span className="detail-label">Assigned User</span>
-                                <span className="detail-value">{full.assigned_user?.name || 'Unassigned'}</span>
+                                <select
+                                  className="form-control"
+                                  value={full.assigned_user_id || full.assigned_user?.id || ''}
+                                  onChange={async (e) => {
+                                    const nextUserId = e.target.value;
+                                    setUserUpdateError('');
+                                    setStatusUpdateError('');
+                                    if (!nextUserId) {
+                                      setUserUpdateError('Please select a user before assigning this tender.');
+                                      return;
+                                    }
+
+                                    try {
+                                      const updated = await updateResult(full.extraction_id, {
+                                        assigned_user_id: nextUserId,
+                                      });
+                                      setExpandedData((prev) => ({
+                                        ...prev,
+                                        [full.extraction_id]: updated,
+                                      }));
+                                      setResults((prev) => prev.map((item) => item.extraction_id === full.extraction_id ? {
+                                        ...item,
+                                        assigned_user_id: updated.assigned_user_id,
+                                        assigned_user_name: updated.assigned_user_name || updated.assigned_user?.name,
+                                      } : item));
+                                    } catch (err) {
+                                      setUserUpdateError(err.message || 'Could not assign user.');
+                                    }
+                                  }}
+                                >
+                                  <option value="">Unassigned</option>
+                                  {users.map((user) => (
+                                    <option key={user.id} value={user.id}>
+                                      {user.name}
+                                    </option>
+                                  ))}
+                                </select>
                               </div>
                               <div className="detail-item">
                                 <span className="detail-label">Current Status</span>
                                 <span className="detail-value">{full.status}</span>
                               </div>
                             </div>
+                            {userUpdateError && (
+                              <div className="alert alert-danger mt-2">
+                                {userUpdateError}
+                              </div>
+                            )}
                           </div>
 
                           <div className="detail-section">
@@ -296,11 +524,19 @@ const Results = ({ data, refreshTrigger }) => {
                                   onChange={async (e) => {
                                     setStatusUpdateError('');
                                     const nextStatus = e.target.value;
-                                    if (!full.assigned_user?.id) {
-                                      setStatusUpdateError('Status can only be updated once a user is assigned.');
-                                      return;
-                                    }
                                     try {
+                                      if (nextStatus === 'deleted') {
+                                        await deleteResult(full.extraction_id);
+                                        setResults((prev) => prev.filter((item) => item.extraction_id !== full.extraction_id));
+                                        setExpandedData((prev) => {
+                                          const next = { ...prev };
+                                          delete next[full.extraction_id];
+                                          return next;
+                                        });
+                                        setExpandedId(null);
+                                        return;
+                                      }
+
                                       const updated = await updateResult(full.extraction_id, {
                                         status: nextStatus,
                                       });
@@ -316,14 +552,85 @@ const Results = ({ data, refreshTrigger }) => {
                                       setStatusUpdateError(err.message || 'Could not update status.');
                                     }
                                   }}
-                                  disabled={!full.assigned_user?.id}
                                 >
                                   <option value="processing">processing</option>
                                   <option value="completed">completed</option>
                                   <option value="failed">failed</option>
+                                  <option value="archived">archived</option>
+                                  <option value="deleted">deleted</option>
                                 </select>
                               </div>
                             </div>
+                            <div className="detail-grid mt-3">
+                              <div className="detail-item">
+                                <label className="detail-label" htmlFor={`total-bid-price-${full.extraction_id}`}>
+                                  Total Bid Price
+                                </label>
+                                <input
+                                  id={`total-bid-price-${full.extraction_id}`}
+                                  className="form-control"
+                                  value={full.total_bid_price || ''}
+                                  placeholder="e.g. R 125000.00"
+                                  onChange={async (e) => {
+                                    const nextValue = e.target.value;
+                                    setExpandedData((prev) => ({
+                                      ...prev,
+                                      [full.extraction_id]: { ...prev[full.extraction_id], total_bid_price: nextValue },
+                                    }));
+                                    try {
+                                      const updated = await updateResult(full.extraction_id, {
+                                        total_bid_price: nextValue,
+                                      });
+                                      setExpandedData((prev) => ({
+                                        ...prev,
+                                        [full.extraction_id]: updated,
+                                      }));
+                                      setResults((prev) => prev.map((item) => item.extraction_id === full.extraction_id ? {
+                                        ...item,
+                                        total_bid_price: updated.total_bid_price || '',
+                                      } : item));
+                                    } catch (err) {
+                                      setStatusUpdateError(err.message || 'Could not update total bid price.');
+                                    }
+                                  }}
+                                />
+                              </div>
+                            </div>
+                            <div className="detail-item mt-3">
+                              <label className="detail-label" htmlFor={`comment-${full.extraction_id}`}>
+                                Comment
+                              </label>
+                              <textarea
+                                id={`comment-${full.extraction_id}`}
+                                className="form-control"
+                                rows={3}
+                                value={full.comment || ''}
+                                placeholder="Add a comment about this tender..."
+                                onChange={async (e) => {
+                                  const nextComment = e.target.value;
+                                  setExpandedData((prev) => ({
+                                    ...prev,
+                                    [full.extraction_id]: { ...prev[full.extraction_id], comment: nextComment },
+                                  }));
+                                  try {
+                                    const updated = await updateResult(full.extraction_id, {
+                                      comment: nextComment,
+                                    });
+                                    setExpandedData((prev) => ({
+                                      ...prev,
+                                      [full.extraction_id]: updated,
+                                    }));
+                                    setResults((prev) => prev.map((item) => item.extraction_id === full.extraction_id ? {
+                                      ...item,
+                                      comment: updated.comment || '',
+                                    } : item));
+                                  } catch (err) {
+                                    setStatusUpdateError(err.message || 'Could not update comment.');
+                                  }
+                                }}
+                              />
+                            </div>
+
                             {statusUpdateError && (
                               <div className="alert alert-danger mt-2">
                                 {statusUpdateError}
@@ -390,6 +697,52 @@ const Results = ({ data, refreshTrigger }) => {
                               </ul>
                             </div>
                           )}
+
+                          <div className="detail-section">
+                            <h3 className="detail-title">Supporting Documents</h3>
+                            <div className="detail-item">
+                              <label className="detail-label" htmlFor={`supporting-documents-${full.extraction_id}`}>
+                                Upload supporting documents
+                              </label>
+                              <input
+                                id={`supporting-documents-${full.extraction_id}`}
+                                className="form-control"
+                                type="file"
+                                accept=".pdf,.doc,.docx,.txt,.csv,.xlsx,.xls"
+                                multiple
+                                onChange={(event) => handleSupportingDocumentUpload(event, full.extraction_id)}
+                              />
+                              {(full.supporting_documents || []).length > 0 ? (
+                                <ul className="detail-list mt-2">
+                                  {(full.supporting_documents || []).map((doc, index) => (
+                                    <li key={`${doc.id || index}-${doc.name}`} className="supporting-document-row">
+                                      <a
+                                        className="supporting-document-link"
+                                        href={`${process.env.REACT_APP_API_URL || 'http://localhost:5000/api'}/results/${full.extraction_id}/supporting-documents/${doc.id}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                      >
+                                        <span aria-hidden="true" className="supporting-document-icon">⬇</span>
+                                        {doc.name}
+                                      </a>
+                                      <button
+                                        type="button"
+                                        className="supporting-document-delete"
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          handleDeleteSupportingDocument(full.extraction_id, doc.id);
+                                        }}
+                                      >
+                                        Delete
+                                      </button>
+                                    </li>
+                                  ))}
+                                </ul>
+                              ) : (
+                                <small className="text-muted">No supporting documents uploaded yet.</small>
+                              )}
+                            </div>
+                          </div>
                         </>
                       ) : null}
                     </div>

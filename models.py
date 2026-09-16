@@ -11,11 +11,13 @@ class User(db.Model):
 
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     name = db.Column(db.String(100), nullable=False, unique=True)
+    email = db.Column(db.String(255), nullable=True, unique=True)
 
     def to_dict(self):
         return {
             'id': self.id,
             'name': self.name,
+            'email': self.email,
         }
 
 
@@ -94,6 +96,11 @@ class Extraction(db.Model):
     contact_persons = db.Column(db.JSON, default=list)
     briefing_session = db.Column(db.String(500))
 
+    # Editable row fields
+    comment = db.Column(db.Text)
+    total_bid_price = db.Column(db.String(100))
+    supporting_documents = db.Column(db.JSON, default=list)
+
     # Metadata
     confidence_scores = db.Column(db.JSON, default=dict)
     processing_time_ms = db.Column(db.Integer)
@@ -127,6 +134,9 @@ class Extraction(db.Model):
             'pricing_schedule':      self.pricing_schedule or [],
             'contact_persons':       self.contact_persons or [],
             'briefing_session':      self.briefing_session,
+            'comment':               self.comment or '',
+            'total_bid_price':       self.total_bid_price or '',
+            'supporting_documents':  self.supporting_documents or [],
         }
         assigned_user = {
             'id': self.assigned_user_id,
@@ -143,6 +153,9 @@ class Extraction(db.Model):
                 'id': self.assigned_user_id,
                 'name': self.assigned_user_name,
             },
+            'comment':           self.comment or '',
+            'total_bid_price':   self.total_bid_price or '',
+            'supporting_documents': self.supporting_documents or [],
             'extracted_data':    extracted_data,
             'confidence_scores': self.confidence_scores or {},
             'processing_time_ms': self.processing_time_ms,

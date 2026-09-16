@@ -37,6 +37,13 @@ class Config:
     CORS_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
     CORS_ALLOW_HEADERS = ['Content-Type']
 
+    # Email configuration
+    MAIL_SERVER = os.getenv('MAIL_SERVER')
+    MAIL_PORT = int(os.getenv('MAIL_PORT', '587'))
+    MAIL_USERNAME = os.getenv('MAIL_USERNAME')
+    MAIL_PASSWORD = os.getenv('MAIL_PASSWORD')
+    MAIL_FROM = os.getenv('MAIL_FROM') or os.getenv('MAIL_SENDER') or 'tdis-no-reply@tia-solutions.co.za'
+
     # API settings
     API_VERSION = '1.0.0'
     API_PREFIX = '/api'

@@ -9,8 +9,6 @@ const Upload = ({ onExtractionStart, onExtractComplete }) => {
   const [extracting, setExtracting] = useState(false);
   const [file, setFile] = useState(null);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [users, setUsers] = useState([]);
-  const [assignedUserId, setAssignedUserId] = useState('');
   const [error, setError] = useState(null);
 
   const allowedFormats = [
@@ -27,19 +25,6 @@ const Upload = ({ onExtractionStart, onExtractComplete }) => {
     maxSize: 50 * 1024 * 1024, // 50MB
     noClick: false,
   });
-
-  useEffect(() => {
-    async function loadUsers() {
-      try {
-        const list = await getUsers();
-        setUsers(list || []);
-      } catch (err) {
-        console.warn('Failed to load users', err);
-      }
-    }
-
-    loadUsers();
-  }, []);
 
   function handleDrop(acceptedFiles) {
     if (acceptedFiles.length > 0) {
@@ -72,7 +57,7 @@ const Upload = ({ onExtractionStart, onExtractComplete }) => {
       }, 200);
 
       // Upload the file
-      const uploadResponse = await uploadDocument(file, assignedUserId);
+      const uploadResponse = await uploadDocument(file, '');
       clearInterval(progressInterval);
       setUploadProgress(100);
 
@@ -154,10 +139,10 @@ const Upload = ({ onExtractionStart, onExtractComplete }) => {
     <div className="upload-container">
       <div className="card">
         <div className="card-header">
-          📄 Upload Tender Document
+          Upload document
         </div>
 
-        <div className="card-body p-3">
+        <div className="card-body">
           <div
             {...getRootProps()}
             className={`dropzone ${isDragActive ? 'active' : ''} ${
@@ -168,14 +153,20 @@ const Upload = ({ onExtractionStart, onExtractComplete }) => {
             <div className="dropzone-content">
               <div className="dropzone-icon">📁</div>
               <p className="dropzone-title">
-                {isDragActive
-                  ? 'Drop your file here'
-                  : 'Drag and drop your tender document here'}
+                {file
+                  ? file.name
+                  : isDragActive
+                    ? 'Drop your file here'
+                    : 'Upload document'}
               </p>
-              <p className="dropzone-subtitle">or click to select a file</p>
-              <p className="dropzone-formats">
-                Supported formats: PDF, DOCX, TXT, CSV, XLSX (Max 50MB)
-              </p>
+              {!file && (
+                <>
+                  <p className="dropzone-subtitle">Drag and drop a document</p>
+                  <p className="dropzone-formats">
+                    PDF, DOCX, TXT, CSV, XLSX (Max 50MB)
+                  </p>
+                </>
+              )}
             </div>
           </div>
 
@@ -210,26 +201,6 @@ const Upload = ({ onExtractionStart, onExtractComplete }) => {
             </div>
           )}
 
-          <div className="mb-3">
-            <label htmlFor="assignedUser" className="form-label">
-              Assign tender to user
-            </label>
-            <select
-              id="assignedUser"
-              value={assignedUserId}
-              onChange={(e) => setAssignedUserId(e.target.value)}
-              className="form-control"
-              disabled={uploading || extracting}
-            >
-              <option value="">Select user</option>
-              {users.map((user) => (
-                <option key={user.id} value={user.id}>
-                  {user.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
           {error && (
             <div className="alert alert-danger mt-2">
               {error}
@@ -258,7 +229,7 @@ const Upload = ({ onExtractionStart, onExtractComplete }) => {
                 disabled={!file}
                 style={{ width: '100%' }}
               >
-                Upload & Extract
+                Upload document
               </button>
             )}
           </div>

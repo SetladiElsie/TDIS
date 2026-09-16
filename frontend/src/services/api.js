@@ -103,6 +103,20 @@ export const getUsers = async () => {
   return response.data;
 };
 
+export const uploadSupportingDocuments = async (extractionId, formData) => {
+  const response = await apiClient.post(`/results/${extractionId}/supporting-documents`, formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+  return response.data;
+};
+
+export const deleteSupportingDocument = async (extractionId, documentId) => {
+  const response = await apiClient.delete(`/results/${extractionId}/supporting-documents/${documentId}`);
+  return response.data;
+};
+
 /**
  * List all extraction results with pagination
  * @param {Object} params - Query parameters

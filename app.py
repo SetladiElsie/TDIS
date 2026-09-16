@@ -70,6 +70,12 @@ def create_app(config_name=None):
             'extractions': [
                 ('assigned_user_id', 'TEXT'),
                 ('assigned_user_name', 'TEXT'),
+                ('comment', 'TEXT'),
+                ('total_bid_price', 'TEXT'),
+                ('supporting_documents', 'TEXT'),
+            ],
+            'users': [
+                ('email', 'TEXT'),
             ],
         }
 
@@ -95,18 +101,21 @@ def create_app(config_name=None):
             logger.info("Database tables created/verified")
             ensure_sqlite_columns()
 
-            default_users = [
-                'Mukovhe',
-                'Elsie',
-                'Boitumelo',
-                'Dumisani',
-                'Nhlanhla',
-                'Keitumetse',
-            ]
+            default_users = {
+                'Mukovhe': 'mubva@tia-solutions.co.za',
+                'Elsie': 'elsie@tia-solutions.co.za',
+                'Boitumelo': 'boitumelo@tia-solutions.co.za',
+                'Dumisani': 'dumisani@tia-solutions.co.za',
+                'Nhlanhla': 'nhlanhla@tia-solutions.co.za',
+                'Keitumetse': 'keitumetse@tia-solutions.co.za',
+            }
             existing_names = {u.name for u in User.query.all()}
-            for name in default_users:
-                if name not in existing_names:
-                    db.session.add(User(name=name))
+            for name, email in default_users.items():
+                user = User.query.filter_by(name=name).first()
+                if user is None:
+                    db.session.add(User(name=name, email=email))
+                elif user.email != email:
+                    user.email = email
             if default_users:
                 db.session.commit()
                 logger.info("Default users seeded")
