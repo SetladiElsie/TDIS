@@ -3,7 +3,6 @@ from datetime import datetime
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-from sqlalchemy import text
 
 from config import config
 from models import db, User
@@ -11,6 +10,7 @@ from routes import api
 from logger import setup_logging, get_logger
 from errors import TenderAPIError
 from cache import CacheManager
+from flask_migrate import Migrate
 
 # Load environment variables
 load_dotenv()
@@ -32,6 +32,7 @@ def create_app(config_name=None):
     
     # Initialize database
     db.init_app(app)
+    Migrate(app, db)
     
     # Initialize cache
     try:
@@ -58,67 +59,35 @@ def create_app(config_name=None):
     # Register blueprints
     app.register_blueprint(api, url_prefix=app.config.get('API_PREFIX', '/api'))
     
-    def ensure_sqlite_columns():
-        if not app.config['SQLALCHEMY_DATABASE_URI'].startswith('sqlite'):
-            return
+    def _is_postgres():
+        return app.config['SQLALCHEMY_DATABASE_URI'].startswith('postgresql')
 
-        required_columns = {
-            'uploads': [
-                ('assigned_user_id', 'TEXT'),
-                ('assigned_user_name', 'TEXT'),
-            ],
-            'extractions': [
-                ('assigned_user_id', 'TEXT'),
-                ('assigned_user_name', 'TEXT'),
-                ('comment', 'TEXT'),
-                ('total_bid_price', 'TEXT'),
-                ('supporting_documents', 'TEXT'),
-            ],
-            'users': [
-                ('email', 'TEXT'),
-            ],
-        }
-
-        for table, columns in required_columns.items():
-            existing = [row[1] for row in db.session.execute(text(f"PRAGMA table_info({table})")).fetchall()]
-            for column_name, column_type in columns:
-                if column_name not in existing:
-                    logger.info(f"Adding missing column {column_name} to {table}")
-                    db.session.execute(text(f"ALTER TABLE {table} ADD COLUMN {column_name} {column_type}"))
-        db.session.commit()
-
-    # Create database tables and seed default users
+    # Create database tables (skipped when running Alembic migration commands)
     with app.app_context():
         try:
-            # Ensure the SQLite directory exists before initializing the database
-            if app.config['SQLALCHEMY_DATABASE_URI'].startswith('sqlite:///'):
-                sqlite_path = app.config['SQLALCHEMY_DATABASE_URI'].replace('sqlite:///', '')
-                sqlite_dir = os.path.dirname(os.path.abspath(sqlite_path))
-                if sqlite_dir:
-                    os.makedirs(sqlite_dir, exist_ok=True)
+            _running_migration = os.getenv('FLASK_SKIP_DB_CREATE', 'false').lower() == 'true'
+            if not _running_migration:
+                db.create_all()
+                logger.info("Database tables created/verified")
 
-            db.create_all()
-            logger.info("Database tables created/verified")
-            ensure_sqlite_columns()
-
-            default_users = {
-                'Mukovhe': 'mubva@tia-solutions.co.za',
-                'Elsie': 'elsie@tia-solutions.co.za',
-                'Boitumelo': 'boitumelo@tia-solutions.co.za',
-                'Dumisani': 'dumisani@tia-solutions.co.za',
-                'Nhlanhla': 'nhlanhla@tia-solutions.co.za',
-                'Keitumetse': 'keitumetse@tia-solutions.co.za',
-            }
-            existing_names = {u.name for u in User.query.all()}
-            for name, email in default_users.items():
-                user = User.query.filter_by(name=name).first()
-                if user is None:
-                    db.session.add(User(name=name, email=email))
-                elif user.email != email:
-                    user.email = email
-            if default_users:
+                # Seed default users (runs on every startup, safe — only inserts missing ones)
+                default_users = {
+                    'Mukovhe':     'mubva@tia-solutions.co.za',
+                    'Elsie':       'elsie@tia-solutions.co.za',
+                    'Boitumelo':   'boitumelo@tia-solutions.co.za',
+                    'Dumisani':    'dumisani@tia-solutions.co.za',
+                    'Nhlanhla':    'nhlanhla@tia-solutions.co.za',
+                    'Keitumetse':  'keitumetse@tia-solutions.co.za',
+                }
+                for name, email in default_users.items():
+                    user = User.query.filter_by(name=name).first()
+                    if user is None:
+                        db.session.add(User(name=name, email=email))
+                    elif user.email != email:
+                        user.email = email
                 db.session.commit()
                 logger.info("Default users seeded")
+
         except Exception as e:
             logger.error(f"Database initialization failed: {str(e)}")
     
@@ -294,11 +263,9 @@ def create_app(config_name=None):
 if __name__ == '__main__':
     app = create_app()
 
-    # Create necessary directories
+    # Ensure upload and log directories exist
     os.makedirs(app.config.get('UPLOAD_FOLDER', 'uploads'), exist_ok=True)
     os.makedirs(app.config.get('LOGS_FOLDER', 'logs'), exist_ok=True)
-    instance_path = os.path.join(os.path.abspath(os.path.dirname(__file__)), 'instance')
-    os.makedirs(instance_path, exist_ok=True)
 
     logger.info("Starting Flask development server")
 
@@ -307,4 +274,3 @@ if __name__ == '__main__':
         port=int(os.getenv('FLASK_PORT', 5000)),
         debug=os.getenv('FLASK_ENV', 'development') == 'development'
     )
-       
