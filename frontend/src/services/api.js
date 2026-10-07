@@ -11,11 +11,32 @@ const apiClient = axios.create({
   },
 });
 
+// Add request interceptor to include auth token
+apiClient.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      config.headers['Authorization'] = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
 // Add response interceptor for error handling
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response) {
+      // Handle 401 Unauthorized - redirect to login
+      if (error.response.status === 401) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        window.location.href = '/login';
+      }
+      
       // Server responded with error status
       return Promise.reject({
         status: error.response.status,
@@ -177,3 +198,35 @@ export const healthCheck = async () => {
 };
 
 export default apiClient;
+
+/**
+ * Upload multiple tender documents
+ * @param {File[]} files - Array of document files to upload
+ * @param {string} assignedUserId - Optional user ID to assign
+ * @returns {Promise<Object>} Batch upload response
+ */
+export const uploadBatchDocuments = async (files, assignedUserId = '') => {
+  const formData = new FormData();
+  files.forEach((file) => {
+    formData.append('files', file);
+  });
+  if (assignedUserId) {
+    formData.append('assigned_user_id', assignedUserId);
+  }
+
+  const response = await apiClient.post('/upload/batch', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 120000, // 2 minutes for batch upload
+  });
+  return response.data;
+};
+
+/**
+ * Trigger batch extraction for multiple uploaded documents
+ * @param {string[]} uploadIds - Array of upload IDs
+ * @returns {Promise<Object>} Batch extraction response
+ */
+export const extractBatch = async (uploadIds) => {
+  const response = await apiClient.post('/extract/batch', { upload_ids: uploadIds });
+  return response.data;
+};

@@ -47,10 +47,12 @@ venv.bak/
 *.db
 *.sqlite
 *.sqlite3
+instance/
 
 # Uploads
 uploads/
 temp/
+quarantine/
 
 # Logs
 *.log

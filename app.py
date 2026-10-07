@@ -7,9 +7,12 @@ from flask_cors import CORS
 from config import config
 from models import db, User
 from routes import api
+from auth_routes import auth_bp
+from auth import init_auth, hash_password
 from logger import setup_logging, get_logger
 from errors import TenderAPIError
 from cache import CacheManager
+from email_service import init_email_service
 from flask_migrate import Migrate
 
 # Load environment variables
@@ -34,6 +37,10 @@ def create_app(config_name=None):
     db.init_app(app)
     Migrate(app, db)
     
+    # Initialize authentication
+    init_auth(app)
+    logger.info("Authentication system initialized")
+    
     # Initialize cache
     try:
         cache_manager = CacheManager(app.config.get('REDIS_URL', 'redis://localhost:6379/0'))
@@ -43,21 +50,32 @@ def create_app(config_name=None):
         logger.warning(f"Cache initialization failed: {str(e)}")
         app.cache = None
     
+    # Initialize email service
+    try:
+        email_service = init_email_service(app.config)
+        app.email_service = email_service
+        logger.info("Email service initialized")
+    except Exception as e:
+        logger.warning(f"Email service initialization failed: {str(e)}")
+        app.email_service = None
+    
     # Enable CORS with config
     CORS(
         app,
         resources={r"/api/*": {
             "origins": app.config.get('CORS_ORIGINS', ['*']),
-            "methods": app.config.get('CORS_METHODS', ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']),
-            "allow_headers": app.config.get('CORS_ALLOW_HEADERS', ['Content-Type', 'Authorization']),
+            "methods": app.config.get('CORS_METHODS', ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']),
+            "allow_headers": app.config.get('CORS_ALLOW_HEADERS', ['Content-Type', 'Authorization', 'Accept']),
             "supports_credentials": True,
             "max_age": 3600
         }}
     )
-    logger.info("CORS enabled")
+    logger.info("CORS enabled for all /api/* routes")
     
     # Register blueprints
     app.register_blueprint(api, url_prefix=app.config.get('API_PREFIX', '/api'))
+    app.register_blueprint(auth_bp, url_prefix='/api/auth')
+    logger.info("Blueprints registered: api, auth")
     
     def _is_postgres():
         return app.config['SQLALCHEMY_DATABASE_URI'].startswith('postgresql')
@@ -70,23 +88,54 @@ def create_app(config_name=None):
                 db.create_all()
                 logger.info("Database tables created/verified")
 
-                # Seed default users (runs on every startup, safe — only inserts missing ones)
-                default_users = {
-                    'Mukovhe':     'mubva@tia-solutions.co.za',
-                    'Elsie':       'elsie@tia-solutions.co.za',
-                    'Boitumelo':   'boitumelo@tia-solutions.co.za',
-                    'Dumisani':    'dumisani@tia-solutions.co.za',
-                    'Nhlanhla':    'nhlanhla@tia-solutions.co.za',
-                    'Keitumetse':  'keitumetse@tia-solutions.co.za',
-                }
-                for name, email in default_users.items():
-                    user = User.query.filter_by(name=name).first()
-                    if user is None:
-                        db.session.add(User(name=name, email=email))
-                    elif user.email != email:
-                        user.email = email
-                db.session.commit()
-                logger.info("Default users seeded")
+                # Seed default users only in development mode (controlled by environment variable)
+                # For production, use the setup script or admin panel to create first admin
+                seed_default_users = os.getenv('SEED_DEFAULT_USERS', 'false').lower() == 'true'
+                
+                if seed_default_users:
+                    logger.info("Seeding default users (development mode)")
+                    default_users = {
+                        'Mukovhe':     ('mubva@tia-solutions.co.za', True),      # Admin
+                        'Elsie':       ('elsie@tia-solutions.co.za', True),      # Admin
+                        'Boitumelo':   ('boitumelo@tia-solutions.co.za', False),
+                        'Dumisani':    ('dumisani@tia-solutions.co.za', False),
+                        'Nhlanhla':    ('nhlanhla@tia-solutions.co.za', False),
+                        'Keitumetse':  ('keitumetse@tia-solutions.co.za', False),
+                    }
+                    default_password = 'TempPass123!'  # Temporary password
+                    
+                    for name, (email, is_admin) in default_users.items():
+                        user = User.query.filter_by(email=email).first()
+                        if user is None:
+                            # Create new user with authentication fields
+                            user = User(
+                                name=name,
+                                email=email,
+                                password_hash=hash_password(default_password),
+                                is_admin=is_admin,
+                                is_active=True
+                            )
+                            db.session.add(user)
+                            logger.info(f"Created user: {name} (admin={is_admin})")
+                        else:
+                            # Update existing user with authentication fields if missing
+                            if not hasattr(user, 'password_hash') or not user.password_hash:
+                                user.password_hash = hash_password(default_password)
+                            if not hasattr(user, 'is_admin'):
+                                user.is_admin = is_admin
+                            if not hasattr(user, 'is_active'):
+                                user.is_active = True
+                    
+                    db.session.commit()
+                    logger.info("Default users seeded/updated with authentication")
+                else:
+                    # Check if any admin user exists, if not, log a warning
+                    admin_count = User.query.filter_by(is_admin=True).count()
+                    if admin_count == 0:
+                        logger.warning("=" * 80)
+                        logger.warning("NO ADMIN USERS FOUND!")
+                        logger.warning("Please create an admin user using: python create_admin.py")
+                        logger.warning("=" * 80)
 
         except Exception as e:
             logger.error(f"Database initialization failed: {str(e)}")

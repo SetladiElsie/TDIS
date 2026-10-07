@@ -8,6 +8,7 @@ import json
 from io import BytesIO, StringIO
 import time
 from threading import Thread
+import logging
 
 from models import db, User, Upload, Extraction
 from extraction import process_document
@@ -15,6 +16,7 @@ import smtplib
 from email.message import EmailMessage
 
 api = Blueprint('api', __name__, url_prefix='/api')
+logger = logging.getLogger(__name__)
 
 
 # ── helpers ────────────────────────────────────────────────────────────────────
@@ -98,6 +100,111 @@ def _parse_date(date_str: str):
 
 # ── upload ─────────────────────────────────────────────────────────────────────
 
+@api.route('/upload/batch', methods=['POST'])
+def upload_batch():
+    """Upload multiple tender documents and create extraction jobs for each."""
+    try:
+        logger.info('Batch upload request received')
+        
+        if 'files' not in request.files:
+            logger.warning('No files in request')
+            return jsonify({'error': 'No files provided', 'code': 'NO_FILES'}), 400
+
+        files = request.files.getlist('files')
+        logger.info(f'Received {len(files)} files for batch upload')
+        
+        if not files or len(files) == 0:
+            logger.warning('File list is empty')
+            return jsonify({'error': 'No files selected', 'code': 'NO_FILES_SELECTED'}), 400
+
+        allowed_ext = current_app.config.get(
+            'ALLOWED_EXTENSIONS', {'pdf', 'docx', 'doc', 'txt', 'xlsx', 'csv'})
+        
+        upload_folder = current_app.config.get('UPLOAD_FOLDER', 'uploads/')
+        os.makedirs(upload_folder, exist_ok=True)
+
+        assigned_user_id = request.form.get('assigned_user_id')
+        assigned_user_name = None
+        if assigned_user_id:
+            user = User.query.get(assigned_user_id)
+            if user:
+                assigned_user_name = user.name
+            else:
+                return jsonify({'error': 'Assigned user not found', 'code': 'USER_NOT_FOUND'}), 400
+
+        uploaded = []
+        skipped = []
+
+        for file in files:
+            if not file or not file.filename:
+                logger.warning('Skipping file with no filename')
+                continue
+
+            logger.info(f'Processing file: {file.filename}')
+
+            # Check file extension
+            if not _allowed_file(file.filename, allowed_ext):
+                logger.warning(f'File {file.filename} has unsupported format')
+                skipped.append({
+                    'filename': file.filename,
+                    'reason': f'Unsupported format. Allowed: {", ".join(sorted(allowed_ext))}'
+                })
+                continue
+
+            try:
+                upload_id = str(uuid.uuid4())
+                filename = secure_filename(file.filename)
+                upload_path = os.path.join(upload_folder, f'{upload_id}_{filename}')
+                file.save(upload_path)
+                file_size = os.path.getsize(upload_path)
+
+                logger.info(f'Saved file {filename} with ID {upload_id} ({file_size} bytes)')
+
+                # Create upload record
+                record = Upload(
+                    id=upload_id,
+                    filename=filename,
+                    upload_path=upload_path,
+                    file_size=file_size,
+                    file_type=filename.rsplit('.', 1)[1].lower() if '.' in filename else 'unknown',
+                    status='uploaded',
+                    assigned_user_id=assigned_user_id,
+                    assigned_user_name=assigned_user_name
+                )
+                db.session.add(record)
+                db.session.flush()
+
+                uploaded.append({
+                    'upload_id': upload_id,
+                    'filename': filename,
+                    'file_size': file_size,
+                    'status': 'uploaded'
+                })
+
+            except Exception as e:
+                logger.error(f'Failed to upload {file.filename}: {str(e)}', exc_info=True)
+                skipped.append({
+                    'filename': file.filename,
+                    'reason': f'Upload failed: {str(e)}'
+                })
+
+        db.session.commit()
+        logger.info(f'Batch upload complete: {len(uploaded)} uploaded, {len(skipped)} skipped')
+
+        return jsonify({
+            'message': f'Uploaded {len(uploaded)} file(s)',
+            'uploaded': uploaded,
+            'skipped': skipped,
+            'total_uploaded': len(uploaded),
+            'total_skipped': len(skipped)
+        }), 200
+
+    except Exception as e:
+        logger.error(f'Batch upload error: {str(e)}', exc_info=True)
+        db.session.rollback()
+        return jsonify({'error': str(e), 'code': 'BATCH_UPLOAD_ERROR'}), 500
+
+
 @api.route('/upload', methods=['POST'])
 def upload_file():
     """Upload a tender document and save it to disk."""
@@ -163,6 +270,217 @@ def upload_file():
 
 
 # ── extract ────────────────────────────────────────────────────────────────────
+
+@api.route('/extract/batch', methods=['POST'])
+def extract_batch():
+    """Trigger extraction for multiple uploaded documents as ONE tender with supporting docs."""
+    try:
+        data = request.json or {}
+        upload_ids = data.get('upload_ids', [])
+        
+        if not upload_ids or not isinstance(upload_ids, list):
+            return jsonify({'error': 'upload_ids array is required', 'code': 'MISSING_UPLOAD_IDS'}), 400
+
+        logger.info(f'Batch extraction requested for {len(upload_ids)} files')
+
+        # Get all uploads
+        uploads = []
+        for upload_id in upload_ids:
+            upload = Upload.query.get(upload_id)
+            if upload:
+                uploads.append(upload)
+            else:
+                logger.warning(f'Upload {upload_id} not found')
+
+        if not uploads:
+            return jsonify({'error': 'No valid uploads found', 'code': 'NO_UPLOADS'}), 404
+
+        # Create ONE extraction for the batch
+        extraction_id = str(uuid.uuid4())
+        primary_upload = uploads[0]  # Use first file as primary
+        
+        extraction = Extraction(
+            id=extraction_id,
+            upload_id=primary_upload.id,
+            status='processing',
+            assigned_user_id=primary_upload.assigned_user_id,
+            assigned_user_name=primary_upload.assigned_user_name,
+        )
+        db.session.add(extraction)
+        db.session.flush()
+
+        # Store all upload IDs as supporting documents
+        supporting_docs = []
+        for idx, upload in enumerate(uploads):
+            supporting_docs.append({
+                'id': upload.id,
+                'name': upload.filename,
+                'size': upload.file_size,
+                'upload_path': upload.upload_path,
+                'is_primary': idx == 0
+            })
+        
+        extraction.supporting_documents = supporting_docs
+        db.session.commit()
+
+        # Start progressive extraction in background
+        upload_paths = [u.upload_path for u in uploads]
+        _start_progressive_extraction_thread(extraction_id, upload_paths)
+
+        logger.info(f'Created batch extraction {extraction_id} for {len(uploads)} files')
+
+        return jsonify({
+            'message': f'Started extraction for batch of {len(uploads)} file(s)',
+            'extraction_id': extraction_id,
+            'upload_ids': upload_ids,
+            'status': 'processing',
+            'file_count': len(uploads)
+        }), 200
+
+    except Exception as e:
+        logger.error(f'Batch extraction error: {str(e)}', exc_info=True)
+        db.session.rollback()
+        return jsonify({'error': str(e), 'code': 'BATCH_EXTRACTION_ERROR'}), 500
+
+
+def _start_progressive_extraction_thread(extraction_id: str, upload_paths: list):
+    """Start progressive extraction for multiple files in background."""
+    app = current_app._get_current_object()
+
+    def _worker():
+        with app.app_context():
+            _run_progressive_extraction(extraction_id, upload_paths)
+
+    thread = Thread(target=_worker, daemon=True)
+    thread.start()
+    return thread
+
+
+def _run_progressive_extraction(extraction_id: str, upload_paths: list):
+    """
+    Run progressive extraction across multiple files.
+    Keep information found in earlier files, only extract missing fields from later files.
+    """
+    start = time.time()
+    extraction = Extraction.query.get(extraction_id)
+    if not extraction:
+        return
+
+    try:
+        logger.info(f'Starting progressive extraction for {len(upload_paths)} files')
+        
+        # Accumulated extraction results
+        merged_data = {}
+        
+        # Track which fields have been found
+        found_fields = set()
+        
+        # Define all possible fields
+        all_fields = [
+            'tender_id', 'tender_name', 'organization', 'scope_of_work',
+            'budget_amount', 'budget_currency', 'contact_email', 'contact_phone',
+            'location', 'estimated_duration', 'submission_format', 'document_type',
+            'closing_date', 'closing_date_formatted', 'address', 'briefing_session',
+            'evaluation_criteria', 'deliverables', 'compulsory_documents',
+            'mandatory_criteria', 'pricing_schedule', 'key_requirements',
+            'contact_persons', 'minimum_requirements'
+        ]
+
+        # Process each file
+        for idx, upload_path in enumerate(upload_paths):
+            logger.info(f'Processing file {idx + 1}/{len(upload_paths)}: {upload_path}')
+            
+            try:
+                file_ext = upload_path.rsplit('.', 1)[-1].lower() if '.' in upload_path else 'txt'
+                fields = process_document(upload_path, file_ext)
+                
+                # Merge data: keep existing values, add new ones
+                for field in all_fields:
+                    value = fields.get(field)
+                    
+                    # Skip if already found and has value
+                    if field in found_fields and merged_data.get(field):
+                        continue
+                    
+                    # Add/update field if new value is meaningful
+                    if value:
+                        if isinstance(value, str) and value.strip():
+                            merged_data[field] = value
+                            found_fields.add(field)
+                        elif isinstance(value, list) and len(value) > 0:
+                            # For lists: merge unique items
+                            existing = merged_data.get(field, [])
+                            if isinstance(existing, list):
+                                merged_data[field] = list(set(existing + value))
+                            else:
+                                merged_data[field] = value
+                            found_fields.add(field)
+                        elif not isinstance(value, (str, list)):
+                            merged_data[field] = value
+                            found_fields.add(field)
+                
+                logger.info(f'File {idx + 1} processed. Found fields: {len(found_fields)}')
+                
+            except Exception as e:
+                logger.error(f'Error processing file {idx + 1}: {str(e)}', exc_info=True)
+                continue
+
+        # Save merged data to extraction
+        extraction.tender_id = merged_data.get('tender_id')
+        extraction.tender_name = merged_data.get('tender_name') or 'Batch Upload'
+        extraction.organization = merged_data.get('organization')
+        extraction.scope_of_work = merged_data.get('scope_of_work')
+        extraction.budget_amount = merged_data.get('budget_amount')
+        extraction.budget_currency = merged_data.get('budget_currency') or 'ZAR'
+        extraction.contact_email = merged_data.get('contact_email')
+        extraction.contact_phone = merged_data.get('contact_phone')
+        extraction.location = merged_data.get('location')
+        extraction.estimated_duration = merged_data.get('estimated_duration')
+        extraction.submission_format = merged_data.get('submission_format')
+        extraction.document_type = merged_data.get('document_type') or 'RFQ/RFP'
+        extraction.briefing_session = merged_data.get('briefing_session')
+        extraction.address = merged_data.get('address')
+
+        # List fields
+        extraction.evaluation_criteria = merged_data.get('evaluation_criteria') or []
+        extraction.deliverables = merged_data.get('deliverables') or []
+        extraction.compulsory_documents = merged_data.get('compulsory_documents') or []
+        extraction.mandatory_criteria = merged_data.get('mandatory_criteria') or []
+        extraction.pricing_schedule = merged_data.get('pricing_schedule') or []
+        extraction.key_requirements = merged_data.get('key_requirements') or []
+        extraction.contact_persons = merged_data.get('contact_persons') or []
+
+        # Closing date
+        closing_str = merged_data.get('closing_date')
+        if closing_str:
+            extraction.closing_date_formatted = closing_str
+            extraction.closing_date = _parse_date(closing_str)
+        else:
+            extraction.closing_date_formatted = None
+            extraction.closing_date = None
+
+        # Confidence scores
+        extraction.confidence_scores = {
+            'tender_id': 1.0 if extraction.tender_id else 0.0,
+            'closing_date': 1.0 if extraction.closing_date else 0.0,
+            'scope_of_work': 1.0 if extraction.scope_of_work else 0.0,
+            'organization': 1.0 if extraction.organization else 0.0,
+        }
+
+        # Mark as completed
+        extraction.status = 'completed'
+        extraction.completed_at = datetime.utcnow()
+        extraction.processing_time_ms = int((time.time() - start) * 1000)
+
+        db.session.commit()
+        logger.info(f'Batch extraction {extraction_id} completed. Found {len(found_fields)} fields across {len(upload_paths)} files')
+
+    except Exception as e:
+        logger.error(f'Batch extraction failed: {str(e)}', exc_info=True)
+        extraction.status = 'failed'
+        extraction.error_message = str(e)
+        db.session.commit()
+
 
 @api.route('/extract', methods=['POST'])
 def extract_information():
@@ -324,12 +642,16 @@ def update_result(extraction_id):
         new_status = data.get('status')
         new_comment = data.get('comment')
         new_total_bid_price = data.get('total_bid_price')
+        new_supporting_documents = data.get('supporting_documents')
 
         if new_comment is not None:
             extraction.comment = new_comment or ''
 
         if new_total_bid_price is not None:
             extraction.total_bid_price = str(new_total_bid_price or '')[:100]
+
+        if new_supporting_documents is not None:
+            extraction.supporting_documents = new_supporting_documents
 
         if new_user_id:
             user = User.query.get(new_user_id)
@@ -514,6 +836,7 @@ def list_results():
                 'upload_id':     r.upload_id,
                 'filename':      upload.filename if upload else 'unknown',
                 'status':        r.status,
+                'tender_id':     r.tender_id or '',
                 'tender_name':   r.tender_name or 'Untitled Tender',
                 'organization':  r.organization,
                 'closing_date':  r.closing_date.isoformat() if r.closing_date else None,

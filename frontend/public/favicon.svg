@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <radialGradient id="mainGrad" cx="35%" cy="35%">
+      <stop offset="0%" style="stop-color:#b07dd8;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#6b1b9a;stop-opacity:1" />
+    </radialGradient>
+    <radialGradient id="smallGrad1" cx="30%" cy="30%">
+      <stop offset="0%" style="stop-color:#8b5fbf;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#2c1451;stop-opacity:1" />
+    </radialGradient>
+    <radialGradient id="smallGrad2" cx="35%" cy="35%">
+      <stop offset="0%" style="stop-color:#764ba2;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#4a1572;stop-opacity:1" />
+    </radialGradient>
+    <radialGradient id="smallGrad3" cx="30%" cy="30%">
+      <stop offset="0%" style="stop-color:#a67fcb;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#5c2d91;stop-opacity:1" />
+    </radialGradient>
+  </defs>
+  
+  <!-- Shadow -->
+  <ellipse cx="42" cy="92" rx="42" ry="8" fill="rgba(0,0,0,0.2)" />
+  
+  <!-- Main large sphere - much bigger, almost fills space -->
+  <circle cx="42" cy="56" r="42" fill="url(#mainGrad)" />
+  <ellipse cx="29" cy="42" rx="17" ry="14" fill="rgba(255,255,255,0.3)" />
+  
+  <!-- Top small sphere - bigger -->
+  <circle cx="75" cy="15" r="18" fill="url(#smallGrad1)" />
+  <ellipse cx="68" cy="10" rx="7" ry="6" fill="rgba(255,255,255,0.4)" />
+  
+  <!-- Middle right sphere - bigger -->
+  <circle cx="92" cy="48" r="15" fill="url(#smallGrad2)" />
+  <ellipse cx="86" cy="43" rx="6" ry="5" fill="rgba(255,255,255,0.4)" />
+  
+  <!-- Bottom right sphere - bigger -->
+  <circle cx="83" cy="80" r="16" fill="url(#smallGrad3)" />
+  <ellipse cx="77" cy="75" rx="6.5" ry="5.5" fill="rgba(255,255,255,0.4)" />
+</svg>

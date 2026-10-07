@@ -24,6 +24,7 @@ const Upload = ({ onExtractionStart, onExtractComplete }) => {
     onDrop: handleDrop,
     maxSize: 50 * 1024 * 1024, // 50MB
     noClick: false,
+    multiple: false,
   });
 
   function handleDrop(acceptedFiles) {

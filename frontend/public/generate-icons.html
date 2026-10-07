@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Generate Icons</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 2rem;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    .icon-preview {
+      display: flex;
+      gap: 2rem;
+      margin: 2rem 0;
+    }
+    canvas {
+      border: 1px solid #ccc;
+      background: white;
+    }
+    button {
+      padding: 0.75rem 1.5rem;
+      background: #764ba2;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 1rem;
+      margin: 0.5rem;
+    }
+    button:hover {
+      background: #5c3a7f;
+    }
+    .instructions {
+      background: #f0f0f0;
+      padding: 1rem;
+      border-radius: 8px;
+      margin: 1rem 0;
+    }
+  </style>
+</head>
+<body>
+  <h1>Generate TDIS Icons</h1>
+  <div class="instructions">
+    <p><strong>Instructions:</strong></p>
+    <ol>
+      <li>Click the buttons below to generate and download the icon files</li>
+      <li>Save the downloaded files to the <code>frontend/public</code> folder</li>
+      <li>Refresh your application to see the new favicon</li>
+    </ol>
+  </div>
+
+  <div class="icon-preview">
+    <div>
+      <h3>16x16 (favicon.ico)</h3>
+      <canvas id="canvas16" width="16" height="16"></canvas>
+    </div>
+    <div>
+      <h3>32x32 (favicon.ico)</h3>
+      <canvas id="canvas32" width="32" height="32"></canvas>
+    </div>
+    <div>
+      <h3>192x192 (logo192.png)</h3>
+      <canvas id="canvas192" width="192" height="192"></canvas>
+    </div>
+    <div>
+      <h3>512x512 (logo512.png)</h3>
+      <canvas id="canvas512" width="512" height="512"></canvas>
+    </div>
+  </div>
+
+  <div>
+    <button onclick="downloadImage('canvas192', 'logo192.png')">Download logo192.png</button>
+    <button onclick="downloadImage('canvas512', 'logo512.png')">Download logo512.png</button>
+    <button onclick="downloadImage('canvas32', 'favicon-32x32.png')">Download favicon-32x32.png</button>
+    <button onclick="downloadImage('canvas16', 'favicon-16x16.png')">Download favicon-16x16.png</button>
+  </div>
+
+  <script>
+    // SVG content
+    const svgContent = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <radialGradient id="mainGrad" cx="35%" cy="35%">
+      <stop offset="0%" style="stop-color:#b07dd8;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#6b1b9a;stop-opacity:1" />
+    </radialGradient>
+    <radialGradient id="smallGrad1" cx="30%" cy="30%">
+      <stop offset="0%" style="stop-color:#8b5fbf;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#2c1451;stop-opacity:1" />
+    </radialGradient>
+    <radialGradient id="smallGrad2" cx="35%" cy="35%">
+      <stop offset="0%" style="stop-color:#764ba2;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#4a1572;stop-opacity:1" />
+    </radialGradient>
+    <radialGradient id="smallGrad3" cx="30%" cy="30%">
+      <stop offset="0%" style="stop-color:#a67fcb;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#5c2d91;stop-opacity:1" />
+    </radialGradient>
+  </defs>
+  
+  <ellipse cx="35" cy="85" rx="28" ry="5" fill="rgba(0,0,0,0.2)" />
+  
+  <circle cx="35" cy="60" r="28" fill="url(#mainGrad)" />
+  <ellipse cx="27" cy="50" rx="10" ry="8" fill="rgba(255,255,255,0.3)" />
+  
+  <circle cx="60" cy="18" r="11" fill="url(#smallGrad1)" />
+  <ellipse cx="56" cy="14" rx="4" ry="3" fill="rgba(255,255,255,0.4)" />
+  
+  <circle cx="75" cy="40" r="8" fill="url(#smallGrad2)" />
+  <ellipse cx="72" cy="37" rx="3" ry="2" fill="rgba(255,255,255,0.4)" />
+  
+  <circle cx="68" cy="65" r="9" fill="url(#smallGrad3)" />
+  <ellipse cx="65" cy="62" rx="3.5" ry="2.5" fill="rgba(255,255,255,0.4)" />
+</svg>`;
+
+    function renderSVG(canvasId) {
+      const canvas = document.getElementById(canvasId);
+      const ctx = canvas.getContext('2d');
+      const size = canvas.width;
+
+      // Create a blob from the SVG
+      const blob = new Blob([svgContent], { type: 'image/svg+xml' });
+      const url = URL.createObjectURL(blob);
+
+      // Create an image
+      const img = new Image();
+      img.onload = function() {
+        ctx.clearRect(0, 0, size, size);
+        ctx.drawImage(img, 0, 0, size, size);
+        URL.revokeObjectURL(url);
+      };
+      img.src = url;
+    }
+
+    function downloadImage(canvasId, filename) {
+      const canvas = document.getElementById(canvasId);
+      canvas.toBlob(function(blob) {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+      });
+    }
+
+    // Render all canvases
+    window.onload = function() {
+      renderSVG('canvas16');
+      renderSVG('canvas32');
+      renderSVG('canvas192');
+      renderSVG('canvas512');
+    };
+  </script>
+</body>
+</html>

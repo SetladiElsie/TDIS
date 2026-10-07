@@ -33,14 +33,44 @@ class User(db.Model):
     id = db.Column(db.String(36), primary_key=True,
                    default=lambda: str(uuid.uuid4()))
     name = db.Column(db.String(100), nullable=False, unique=True)
-    email = db.Column(db.String(255), nullable=True, unique=True)
+    email = db.Column(db.String(255), nullable=False, unique=True, index=True)
+    
+    # Authentication fields
+    password_hash = db.Column(db.String(255), nullable=False)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    is_admin = db.Column(db.Boolean, default=False, nullable=False)
+    must_change_password = db.Column(db.Boolean, default=False, nullable=False)
+    
+    # Timestamps
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    last_login = db.Column(db.DateTime, nullable=True)
+    
+    # Flask-Login integration
+    @property
+    def is_authenticated(self):
+        return True
+    
+    @property
+    def is_anonymous(self):
+        return False
+    
+    def get_id(self):
+        return str(self.id)
 
-    def to_dict(self):
-        return {
-            'id':    self.id,
-            'name':  self.name,
-            'email': self.email,
+    def to_dict(self, include_sensitive=False):
+        data = {
+            'id':         self.id,
+            'name':       self.name,
+            'email':      self.email,
+            'is_active':  self.is_active,
+            'is_admin':   self.is_admin,
+            'must_change_password': self.must_change_password,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'last_login': self.last_login.isoformat() if self.last_login else None,
         }
+        if include_sensitive:
+            data['password_hash'] = self.password_hash
+        return data
 
     def __repr__(self):
         return f'<User {self.name}>'

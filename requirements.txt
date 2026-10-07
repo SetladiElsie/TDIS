@@ -48,3 +48,14 @@ pytest-flask==1.3.0
 
 # Production server
 gunicorn==23.0.0
+
+# Security - File validation and virus scanning
+python-magic==0.4.27
+python-magic-bin==0.4.14  # Windows binary for python-magic
+clamd==1.0.2  # ClamAV daemon interface
+
+# Authentication and Security
+Flask-Login==0.6.3
+Flask-Bcrypt==1.0.1
+PyJWT==2.8.0
+email-validator==2.1.0

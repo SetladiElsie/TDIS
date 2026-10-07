@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { listResults, getResults, updateResult, getUsers, uploadSupportingDocuments, deleteSupportingDocument, deleteResult } from '../services/api';
+import { listResults, getResults, updateResult, getUsers } from '../services/api';
 import { parseExtractionData, formatSouthAfricanPhone } from '../utils/helpers';
 import '../styles/Results.css';
 
@@ -19,6 +19,7 @@ const Results = ({ data, refreshTrigger, onResultsCountChange }) => {
   const [statusFilter, setStatusFilter] = useState('');
   const [userFilter, setUserFilter] = useState('');
   const [contextMenu, setContextMenu] = useState({ visible: false, x: 0, y: 0, extractionId: null, status: null });
+  const [expandedDocuments, setExpandedDocuments] = useState({});
 
   const itemsPerPage = 10;
 
@@ -112,20 +113,7 @@ const Results = ({ data, refreshTrigger, onResultsCountChange }) => {
     }
   };
 
-  const handleDeleteTender = async (extractionId) => {
-    try {
-      await deleteResult(extractionId);
-      setResults((prev) => prev.filter((item) => item.extraction_id !== extractionId));
-      setExpandedData((prev) => {
-        const next = { ...prev };
-        delete next[extractionId];
-        return next;
-      });
-      setContextMenu({ visible: false, x: 0, y: 0, extractionId: null, status: null });
-    } catch (err) {
-      setStatusUpdateError(err.message || 'Could not delete tender.');
-    }
-  };
+
 
   async function toggleExpand(extractionId) {
     // Collapse if already open
@@ -153,42 +141,6 @@ const Results = ({ data, refreshTrigger, onResultsCountChange }) => {
 
   const totalPages = Math.ceil(totalResults / itemsPerPage);
 
-  const handleSupportingDocumentUpload = async (event, extractionId) => {
-    const files = Array.from(event.target.files || []);
-    if (!files.length) return;
-
-    const formData = new FormData();
-    files.forEach((file) => formData.append('files', file));
-
-    try {
-      const response = await uploadSupportingDocuments(extractionId, formData);
-      const savedDocs = response.supporting_documents || [];
-
-      setExpandedData((prev) => ({
-        ...prev,
-        [extractionId]: { ...(prev[extractionId] || {}), supporting_documents: savedDocs },
-      }));
-    } catch (error) {
-      setStatusUpdateError(error.message || 'Could not upload supporting documents.');
-    } finally {
-      event.target.value = '';
-    }
-  };
-
-  const handleDeleteSupportingDocument = async (extractionId, documentId) => {
-    try {
-      const response = await deleteSupportingDocument(extractionId, documentId);
-      const savedDocs = response.supporting_documents || [];
-
-      setExpandedData((prev) => ({
-        ...prev,
-        [extractionId]: { ...(prev[extractionId] || {}), supporting_documents: savedDocs },
-      }));
-    } catch (error) {
-      setStatusUpdateError(error.message || 'Could not delete supporting document.');
-    }
-  };
-
   return (
     <div className="results-container">
       <h2 className="section-title">📋 Extraction Results</h2>
@@ -215,7 +167,6 @@ const Results = ({ data, refreshTrigger, onResultsCountChange }) => {
             <option value="processing">Processing</option>
             <option value="failed">Failed</option>
             <option value="archived">Archived</option>
-            <option value="deleted">Deleted</option>
           </select>
         </div>
         <div className="filter-select">
@@ -260,14 +211,9 @@ const Results = ({ data, refreshTrigger, onResultsCountChange }) => {
                   Restore
                 </button>
               ) : (
-                <>
-                  <button type="button" className="context-menu-item" onClick={() => handleArchiveTender(contextMenu.extractionId)}>
-                    Archive
-                  </button>
-                  <button type="button" className="context-menu-item" onClick={() => handleDeleteTender(contextMenu.extractionId)}>
-                    Delete
-                  </button>
-                </>
+                <button type="button" className="context-menu-item" onClick={() => handleArchiveTender(contextMenu.extractionId)}>
+                  Archive
+                </button>
               )}
             </div>
           )}
@@ -296,7 +242,10 @@ const Results = ({ data, refreshTrigger, onResultsCountChange }) => {
                   >
                     <div className="result-header">
                       <div className="result-title-group">
-                        <h3 className="result-title">{result.tender_name}</h3>
+                        <h3 className="result-title">{result.tender_id || 'No RFQ/Bid Number'}</h3>
+                        {result.tender_name && (
+                          <div className="result-description">{result.tender_name}</div>
+                        )}
                         <div className="result-meta">
                           <div className="meta-item">
                             <span className="meta-label">Assigned</span>
@@ -304,16 +253,22 @@ const Results = ({ data, refreshTrigger, onResultsCountChange }) => {
                           </div>
                           {result.upload_id && (
                             <div className="meta-item">
-                              <span className="meta-label">Tender Document</span>
-                              <a
-                                className="result-original-document"
-                                href={tenderDocumentUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                onClick={(event) => event.stopPropagation()}
-                              >
-                                📄 {result.filename || 'Original Tender'}
-                              </a>
+                              <span className="meta-label">Tender Documents</span>
+                              {full && full.supporting_documents && full.supporting_documents.length > 0 ? (
+                                <span className="meta-value">
+                                  📁 {full.supporting_documents.length} document(s)
+                                </span>
+                              ) : (
+                                <a
+                                  className="result-original-document"
+                                  href={tenderDocumentUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  onClick={(event) => event.stopPropagation()}
+                                >
+                                  📄 {result.filename || 'Original Tender'}
+                                </a>
+                              )}
                             </div>
                           )}
                         </div>
@@ -364,6 +319,54 @@ const Results = ({ data, refreshTrigger, onResultsCountChange }) => {
                               </div>
                             </div>
                           </div>
+
+                          {/* Tender Documents Folder */}
+                          {full.supporting_documents && full.supporting_documents.length > 0 && (
+                            <div className="detail-section">
+                              <h3 
+                                className="detail-title collapsible-title"
+                                onClick={() => {
+                                  setExpandedDocuments(prev => ({
+                                    ...prev,
+                                    [full.extraction_id]: !prev[full.extraction_id]
+                                  }));
+                                }}
+                                style={{ cursor: 'pointer', userSelect: 'none' }}
+                              >
+                                <span className={`accordion-arrow ${expandedDocuments[full.extraction_id] ? 'open' : ''}`}>▾</span>
+                                📁 Tender Documents ({full.supporting_documents.length})
+                              </h3>
+                              {expandedDocuments[full.extraction_id] && (
+                                <div className="documents-folder">
+                                  {full.supporting_documents.map((doc, idx) => (
+                                    <div key={idx} className="document-item">
+                                      <div className="document-icon">
+                                        {doc.is_primary ? '📄' : '📎'}
+                                      </div>
+                                      <div className="document-info">
+                                        <div className="document-name">
+                                          {doc.name}
+                                          {doc.is_primary && <span className="primary-badge">Primary</span>}
+                                        </div>
+                                        <div className="document-size">
+                                          {doc.size ? `${(doc.size / 1024 / 1024).toFixed(2)} MB` : '—'}
+                                        </div>
+                                      </div>
+                                      <a
+                                        href={`${process.env.REACT_APP_API_URL || 'http://localhost:5000/api'}/uploads/${doc.id}/file`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="btn btn-sm btn-outline"
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        Download
+                                      </a>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
 
                           {/* Briefing Session */}
                           {parsedData.briefing_session && (
@@ -525,18 +528,6 @@ const Results = ({ data, refreshTrigger, onResultsCountChange }) => {
                                     setStatusUpdateError('');
                                     const nextStatus = e.target.value;
                                     try {
-                                      if (nextStatus === 'deleted') {
-                                        await deleteResult(full.extraction_id);
-                                        setResults((prev) => prev.filter((item) => item.extraction_id !== full.extraction_id));
-                                        setExpandedData((prev) => {
-                                          const next = { ...prev };
-                                          delete next[full.extraction_id];
-                                          return next;
-                                        });
-                                        setExpandedId(null);
-                                        return;
-                                      }
-
                                       const updated = await updateResult(full.extraction_id, {
                                         status: nextStatus,
                                       });
@@ -557,7 +548,6 @@ const Results = ({ data, refreshTrigger, onResultsCountChange }) => {
                                   <option value="completed">completed</option>
                                   <option value="failed">failed</option>
                                   <option value="archived">archived</option>
-                                  <option value="deleted">deleted</option>
                                 </select>
                               </div>
                             </div>
@@ -699,48 +689,81 @@ const Results = ({ data, refreshTrigger, onResultsCountChange }) => {
                           )}
 
                           <div className="detail-section">
-                            <h3 className="detail-title">Supporting Documents</h3>
-                            <div className="detail-item">
-                              <label className="detail-label" htmlFor={`supporting-documents-${full.extraction_id}`}>
-                                Upload supporting documents
-                              </label>
-                              <input
-                                id={`supporting-documents-${full.extraction_id}`}
-                                className="form-control"
-                                type="file"
-                                accept=".pdf,.doc,.docx,.txt,.csv,.xlsx,.xls"
-                                multiple
-                                onChange={(event) => handleSupportingDocumentUpload(event, full.extraction_id)}
-                              />
-                              {(full.supporting_documents || []).length > 0 ? (
-                                <ul className="detail-list mt-2">
-                                  {(full.supporting_documents || []).map((doc, index) => (
-                                    <li key={`${doc.id || index}-${doc.name}`} className="supporting-document-row">
-                                      <a
-                                        className="supporting-document-link"
-                                        href={`${process.env.REACT_APP_API_URL || 'http://localhost:5000/api'}/results/${full.extraction_id}/supporting-documents/${doc.id}`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                      >
-                                        <span aria-hidden="true" className="supporting-document-icon">⬇</span>
-                                        {doc.name}
-                                      </a>
-                                      <button
-                                        type="button"
-                                        className="supporting-document-delete"
-                                        onClick={(event) => {
-                                          event.stopPropagation();
-                                          handleDeleteSupportingDocument(full.extraction_id, doc.id);
+                            <div className="checklist-header">
+                              <a 
+                                href="https://technologyinfrastracture.sharepoint.com/:f:/r/sites/TIASolutions/TIA%20share/SALES/COMPLETED%20Government%20Tender%20Bids?d=wa6c6d023169148bea2aaa8184371c27b&csf=1&web=1&e=kJY4ng" 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="btn btn-primary"
+                                style={{ textDecoration: 'none' }}
+                              >
+                                📁 View Completed Tender Bids
+                              </a>
+                              <h3 className="detail-title">Tender Submission Checklist</h3>
+                            </div>
+                            <div className="checklist-container">
+                              {[
+                                'Company Resolution Letter',
+                                'Company Profile',
+                                'Bidding Documents',
+                                'CSD Report',
+                                'BBBEE Certificate',
+                                'Sworn Affidavit',
+                                'Director\'s IDs',
+                                'OEM and Certification',
+                                'Employee CV',
+                                'Letter of Good Standing',
+                                'COR (Certificate of Registration)',
+                                'Tax PIN',
+                                'Proof of Account',
+                                'Lease Agreement',
+                                'Pricing Schedule',
+                                'Datasheet',
+                              ].map((item, idx) => {
+                                const checklistItems = full.supporting_documents || [];
+                                const checkedItem = checklistItems.find(doc => doc.name === item);
+                                const isChecked = checkedItem?.checked || false;
+
+                                return (
+                                  <div key={idx} className="checklist-item">
+                                    <label className="checklist-label">
+                                      <input
+                                        type="checkbox"
+                                        className="checklist-checkbox"
+                                        checked={isChecked}
+                                        onChange={async (e) => {
+                                          const newChecked = e.target.checked;
+                                          let updatedChecklist = [...checklistItems];
+                                          
+                                          const existingIndex = updatedChecklist.findIndex(doc => doc.name === item);
+                                          if (existingIndex >= 0) {
+                                            updatedChecklist[existingIndex] = { name: item, checked: newChecked };
+                                          } else {
+                                            updatedChecklist.push({ name: item, checked: newChecked });
+                                          }
+
+                                          console.log('Updating checklist:', { item, newChecked, updatedChecklist });
+
+                                          try {
+                                            const updated = await updateResult(full.extraction_id, {
+                                              supporting_documents: updatedChecklist,
+                                            });
+                                            console.log('Update successful:', updated);
+                                            setExpandedData((prev) => ({
+                                              ...prev,
+                                              [full.extraction_id]: updated,
+                                            }));
+                                          } catch (err) {
+                                            console.error('Update failed:', err);
+                                            setStatusUpdateError(err.message || 'Could not update checklist.');
+                                          }
                                         }}
-                                      >
-                                        Delete
-                                      </button>
-                                    </li>
-                                  ))}
-                                </ul>
-                              ) : (
-                                <small className="text-muted">No supporting documents uploaded yet.</small>
-                              )}
+                                      />
+                                      <span className="checklist-text">{item}</span>
+                                    </label>
+                                  </div>
+                                );
+                              })}
                             </div>
                           </div>
                         </>

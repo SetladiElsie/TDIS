@@ -1,0 +1,82 @@
+services:
+  # Backend Service - Python/Flask API
+  - type: web
+    name: tdis-backend
+    env: python
+    region: oregon
+    plan: starter
+    buildCommand: "./render-build.sh"
+    startCommand: "gunicorn app:app --bind 0.0.0.0:$PORT --workers 4 --timeout 120 --access-logfile - --error-logfile -"
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: DATABASE_URL
+        fromDatabase:
+          name: tdis-database
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: tdis-redis
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: CORS_ORIGINS
+        value: https://tdis-frontend.onrender.com
+      - key: UPLOAD_FOLDER
+        value: /var/data/uploads
+      - key: LOGS_FOLDER
+        value: /var/data/logs
+      - key: MAX_FILE_SIZE
+        value: 524288000  # 500 MB
+      - key: ENABLE_FILE_MIME_VALIDATION
+        value: true
+      - key: ENABLE_VIRUS_SCANNING
+        value: false
+      - key: LOG_LEVEL
+        value: INFO
+      - key: LOG_TO_STDOUT
+        value: true
+    disk:
+      name: tdis-uploads
+      mountPath: /var/data
+      sizeGB: 10
+
+  # Frontend Service - Static Site (React)
+  - type: web
+    name: tdis-frontend
+    env: static
+    region: oregon
+    buildCommand: "cd frontend && npm install && npm run build"
+    staticPublishPath: ./frontend/build
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: REACT_APP_API_URL
+        value: https://tdis-backend.onrender.com
+
+  # PostgreSQL Database
+  - type: pserv
+    name: tdis-database
+    env: docker
+    region: oregon
+    plan: starter
+    image: postgres:15
+    envVars:
+      - key: POSTGRES_USER
+        value: tdis_user
+      - key: POSTGRES_PASSWORD
+        generateValue: true
+      - key: POSTGRES_DB
+        value: tdis_production
+
+  # Redis Cache
+  - type: redis
+    name: tdis-redis
+    region: oregon
+    plan: starter
+    maxmemoryPolicy: allkeys-lru

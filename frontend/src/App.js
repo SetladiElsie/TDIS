@@ -1,35 +1,43 @@
 import React, { useState, useEffect } from 'react';
-import Upload from './components/Upload';
+import { BrowserRouter as Router, Routes, Route, Navigate, useSearchParams } from 'react-router-dom';
+import UploadBatch from './components/UploadBatch';
 import Results from './components/Results';
 import ImportPanel from './components/ImportPanel';
+import Login from './components/Login';
+import Register from './components/Register';
+import UserManagement from './components/UserManagement';
+import Profile from './components/Profile';
+import Navigation from './components/Navigation';
+import ProtectedRoute from './components/ProtectedRoute';
+import ChangePasswordPrompt from './components/ChangePasswordPrompt';
 import { healthCheck } from './services/api';
+import { isAuthenticated, getCurrentUser } from './services/authService';
 import './styles/App.css';
 import './styles/index.css';
 
-function App() {
+function HomePage({ onTenderCountChange }) {
   const [extractedData, setExtractedData] = useState(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [apiReady, setApiReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const [apiError, setApiError] = useState('');
   const [importUrl, setImportUrl] = useState(null);
-  const [tenderCount, setTenderCount] = useState(0);
+  const [searchParams] = useSearchParams();
 
   useEffect(() => {
     checkAPI();
   }, []);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const url = params.get('downloadUrl') || params.get('download_url');
+    const url = searchParams.get('downloadUrl') || searchParams.get('download_url');
     if (url) {
       setImportUrl(url);
     }
-  }, []);
+  }, [searchParams]);
 
   async function checkAPI() {
     try {
-      const health = await healthCheck();
+      await healthCheck();
       setApiReady(true);
       setLoading(false);
     } catch (error) {
@@ -58,20 +66,7 @@ function App() {
   }
 
   return (
-    <div className="app">
-      {/* Header */}
-      <header className="app-header">
-        <div className="container">
-          <div className="header-content flex-between">
-            <div className="brand-wrap">
-              <div className="brand-mark">T</div>
-              <h1 className="app-title">Tender Extraction Portal</h1>
-            </div>
-            <div className="header-count">{tenderCount} tender{tenderCount === 1 ? '' : 's'}</div>
-          </div>
-        </div>
-      </header>
-
+    <>
       {/* Main Content */}
       <main className="app-main">
         <div className="container">
@@ -94,7 +89,7 @@ function App() {
             </section>
           ) : (
             <section className="section">
-              <Upload
+              <UploadBatch
                 onExtractionStart={handleExtractionStart}
                 onExtractComplete={handleExtractComplete}
               />
@@ -107,7 +102,7 @@ function App() {
               <Results
                 data={extractedData}
                 refreshTrigger={refreshTrigger}
-                onResultsCountChange={setTenderCount}
+                onResultsCountChange={onTenderCountChange}
               />
             </section>
           )}
@@ -122,7 +117,106 @@ function App() {
           </div>
         </div>
       </footer>
+    </>
+  );
+}
+
+function AppContent() {
+  const [tenderCount, setTenderCount] = useState(0);
+  const [mustChangePassword, setMustChangePassword] = useState(false);
+  const authenticated = isAuthenticated();
+
+  useEffect(() => {
+    if (authenticated) {
+      checkPasswordStatus();
+    }
+  }, [authenticated]);
+
+  const checkPasswordStatus = async () => {
+    try {
+      const user = await getCurrentUser();
+      setMustChangePassword(user.must_change_password || false);
+    } catch (error) {
+      console.error('Failed to check password status:', error);
+    }
+  };
+
+  const handlePasswordChanged = () => {
+    setMustChangePassword(false);
+    window.location.reload(); // Reload to refresh user data
+  };
+
+  const handlePasswordCancel = () => {
+    // User cancelled password change - just hide the prompt
+    // They can logout and come back later
+    setMustChangePassword(false);
+  };
+
+  return (
+    <div className="app">
+      {authenticated && <Navigation tenderCount={tenderCount} />}
+      
+      {/* Show password change prompt if required */}
+      {authenticated && mustChangePassword && (
+        <ChangePasswordPrompt 
+          onPasswordChanged={handlePasswordChanged}
+          onCancel={handlePasswordCancel}
+        />
+      )}
+      
+      <Routes>
+        {/* Public Routes */}
+        <Route 
+          path="/login" 
+          element={
+            authenticated ? <Navigate to="/" replace /> : <Login />
+          } 
+        />
+        <Route 
+          path="/register" 
+          element={
+            authenticated ? <Navigate to="/" replace /> : <Register />
+          } 
+        />
+
+        {/* Protected Routes */}
+        <Route 
+          path="/" 
+          element={
+            <ProtectedRoute>
+              <HomePage onTenderCountChange={setTenderCount} />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/profile" 
+          element={
+            <ProtectedRoute>
+              <Profile />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/users" 
+          element={
+            <ProtectedRoute requireAdmin={true}>
+              <UserManagement />
+            </ProtectedRoute>
+          } 
+        />
+
+        {/* Catch all - redirect to home */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
     </div>
+  );
+}
+
+function App() {
+  return (
+    <Router>
+      <AppContent />
+    </Router>
   );
 }
 

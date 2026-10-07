@@ -26,8 +26,18 @@ class ValidationError(Exception):
     pass
 
 
-def validate_file(file, max_size=50*1024*1024):
-    """Validate uploaded file"""
+def validate_file(file, max_size=50*1024*1024, enable_advanced_security=False):
+    """
+    Validate uploaded file with optional advanced security
+    
+    Args:
+        file: Uploaded file object
+        max_size: Maximum file size in bytes
+        enable_advanced_security: Enable MIME validation and virus scanning
+    
+    Returns:
+        Dict with validation results
+    """
     errors = []
     
     if not file:
@@ -48,7 +58,7 @@ def validate_file(file, max_size=50*1024*1024):
     if ext not in ALLOWED_EXTENSIONS:
         raise ValidationError(f'Invalid file extension: {ext}. Allowed: {", ".join(ALLOWED_EXTENSIONS)}')
     
-    # Check MIME type
+    # Check MIME type from header
     if file.content_type and file.content_type not in ALLOWED_MIME_TYPES:
         logger.warning(f"Suspicious MIME type: {file.content_type} for file {filename}")
     
@@ -63,11 +73,22 @@ def validate_file(file, max_size=50*1024*1024):
     if file_size > max_size:
         raise ValidationError(f'File too large: {file_size} bytes (max: {max_size})')
     
-    return {
+    result = {
         'filename': filename,
         'size': file_size,
-        'extension': ext
+        'extension': ext,
+        'mime_validated': False,
+        'virus_scanned': False
     }
+    
+    # Advanced security checks (if enabled and file is saved)
+    if enable_advanced_security:
+        logger.info(f"Advanced security validation enabled for {filename}")
+        # Note: Advanced validation requires file to be saved first
+        # This is performed in routes.py after saving the file
+        result['needs_advanced_validation'] = True
+    
+    return result
 
 
 def validate_extraction_data(data):

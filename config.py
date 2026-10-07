@@ -32,10 +32,21 @@ class Config:
     }
 
     # ── File upload ───────────────────────────────────────────────────────────
+    # IMPORTANT: Store uploads outside web root for security
+    # Development: relative path (uploads/)
+    # Production: absolute path outside application directory (/var/uploads/tdis/)
     UPLOAD_FOLDER = os.getenv('UPLOAD_FOLDER', 'uploads/')
     LOGS_FOLDER = os.getenv('LOGS_FOLDER', 'logs/')
-    MAX_CONTENT_LENGTH = int(os.getenv('MAX_FILE_SIZE', 50 * 1024 * 1024))  # 50 MB
+    MAX_CONTENT_LENGTH = int(os.getenv('MAX_FILE_SIZE', 500 * 1024 * 1024))  # 500 MB (increased for batch uploads)
     ALLOWED_EXTENSIONS = {'pdf', 'docx', 'doc', 'txt', 'xlsx', 'csv', 'rtf', 'odt'}
+    
+    # ── File Security ─────────────────────────────────────────────────────────
+    # Enable advanced file validation (MIME type checking, virus scanning)
+    ENABLE_FILE_MIME_VALIDATION = os.getenv('ENABLE_FILE_MIME_VALIDATION', 'True').lower() == 'true'
+    ENABLE_VIRUS_SCANNING = os.getenv('ENABLE_VIRUS_SCANNING', 'False').lower() == 'true'
+    
+    # Quarantine folder for suspicious files
+    QUARANTINE_FOLDER = os.getenv('QUARANTINE_FOLDER', 'quarantine/')
 
     # ── Redis / Caching ───────────────────────────────────────────────────────
     REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
@@ -44,7 +55,7 @@ class Config:
     # ── CORS ──────────────────────────────────────────────────────────────────
     CORS_ORIGINS = os.getenv('CORS_ORIGINS', 'http://localhost:3000').split(',')
     CORS_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
-    CORS_ALLOW_HEADERS = ['Content-Type']
+    CORS_ALLOW_HEADERS = ['Content-Type', 'Authorization', 'Accept']
 
     # ── Email ─────────────────────────────────────────────────────────────────
     MAIL_SERVER = os.getenv('MAIL_SERVER')
