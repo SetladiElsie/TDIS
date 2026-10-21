@@ -5,7 +5,7 @@ services:
     env: python
     region: oregon
     plan: starter
-    buildCommand: "./render-build.sh"
+    buildCommand: "chmod +x render-build.sh && ./render-build.sh"
     startCommand: "gunicorn app:app --bind 0.0.0.0:$PORT --workers 4 --timeout 120 --access-logfile - --error-logfile -"
     envVars:
       - key: FLASK_ENV
@@ -23,6 +23,8 @@ services:
           property: connectionString
       - key: SECRET_KEY
         generateValue: true
+      - key: SEED_DEFAULT_USERS
+        value: false
       - key: CORS_ORIGINS
         value: https://tdis-frontend.onrender.com
       - key: UPLOAD_FOLDER
@@ -30,7 +32,7 @@ services:
       - key: LOGS_FOLDER
         value: /var/data/logs
       - key: MAX_FILE_SIZE
-        value: 524288000  # 500 MB
+        value: 524288000
       - key: ENABLE_FILE_MIME_VALIDATION
         value: true
       - key: ENABLE_VIRUS_SCANNING
@@ -49,34 +51,25 @@ services:
     name: tdis-frontend
     env: static
     region: oregon
-    buildCommand: "cd frontend && npm install && npm run build"
+    buildCommand: "cd frontend && npm install && REACT_APP_API_URL=https://tdis-backend.onrender.com npm run build"
     staticPublishPath: ./frontend/build
     routes:
       - type: rewrite
         source: /*
         destination: /index.html
-    envVars:
-      - key: REACT_APP_API_URL
-        value: https://tdis-backend.onrender.com
 
+databases:
   # PostgreSQL Database
-  - type: pserv
-    name: tdis-database
-    env: docker
+  - name: tdis-database
+    databaseName: tdis_production
+    user: tdis_user
     region: oregon
     plan: starter
-    image: postgres:15
-    envVars:
-      - key: POSTGRES_USER
-        value: tdis_user
-      - key: POSTGRES_PASSWORD
-        generateValue: true
-      - key: POSTGRES_DB
-        value: tdis_production
 
   # Redis Cache
-  - type: redis
-    name: tdis-redis
+  - name: tdis-redis
     region: oregon
     plan: starter
     maxmemoryPolicy: allkeys-lru
+    ipAllowList: []
+
