@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "render": {
+      "url": "https://mcp.render.com",
+      "transport": {
+        "type": "sse"
+      },
+      "auth": {
+        "type": "oauth"
+      }
+    }
+  }
+}
