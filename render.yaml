@@ -58,7 +58,6 @@ services:
   - type: web
     name: tdis-frontend
     env: static
-    region: oregon
     buildCommand: "cd frontend && npm install && REACT_APP_API_URL=https://tdis-backend.onrender.com npm run build"
     staticPublishPath: ./frontend/build
     routes:
