@@ -1,4 +1,12 @@
 services:
+  # Redis Cache
+  - type: redis
+    name: tdis-redis
+    region: oregon
+    plan: starter
+    maxmemoryPolicy: allkeys-lru
+    ipAllowList: []
+
   # Backend Service - Python/Flask API
   - type: web
     name: tdis-backend
@@ -65,11 +73,4 @@ databases:
     user: tdis_user
     region: oregon
     plan: starter
-
-  # Redis Cache
-  - name: tdis-redis
-    region: oregon
-    plan: starter
-    maxmemoryPolicy: allkeys-lru
-    ipAllowList: []
 
