@@ -36,11 +36,11 @@ services:
       - key: CORS_ORIGINS
         value: https://tdis-frontend.onrender.com
       - key: UPLOAD_FOLDER
-        value: /var/data/uploads
+        value: /tmp/uploads
       - key: LOGS_FOLDER
-        value: /var/data/logs
+        value: /tmp/logs
       - key: MAX_FILE_SIZE
-        value: 524288000
+        value: 52428800
       - key: ENABLE_FILE_MIME_VALIDATION
         value: true
       - key: ENABLE_VIRUS_SCANNING
@@ -49,10 +49,6 @@ services:
         value: INFO
       - key: LOG_TO_STDOUT
         value: true
-    disk:
-      name: tdis-uploads
-      mountPath: /var/data
-      sizeGB: 10
 
   # Frontend Service - Static Site (React)
   - type: web
