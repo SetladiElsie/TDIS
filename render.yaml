@@ -13,8 +13,8 @@ services:
     env: python
     region: oregon
     plan: starter
-    buildCommand: "pip install --upgrade pip && pip install -r requirements.txt && mkdir -p instance && python -c \"import nltk; nltk.download('punkt', quiet=True); nltk.download('stopwords', quiet=True); nltk.download('averaged_perceptron_tagger', quiet=True); print('NLTK data downloaded')\" && python -c \"from app import create_app; from models import db; app = create_app('production'); app.app_context().push(); db.create_all(); print('Database initialized')\""
-    startCommand: "gunicorn app:app --bind 0.0.0.0:$PORT --workers 4 --timeout 120 --access-logfile - --error-logfile -"
+    buildCommand: "pip install --upgrade pip && pip install -r requirements.txt && python -c \"import nltk; nltk.download('punkt', quiet=True); nltk.download('stopwords', quiet=True); nltk.download('averaged_perceptron_tagger', quiet=True); print('NLTK data downloaded')\""
+    startCommand: "gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120 --access-logfile - --error-logfile -"
     envVars:
       - key: FLASK_ENV
         value: production
