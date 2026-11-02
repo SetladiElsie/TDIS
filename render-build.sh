@@ -12,11 +12,10 @@ echo "📦 Installing Python dependencies..."
 pip install --upgrade pip
 pip install -r requirements.txt
 
-# Create necessary directories
+# Create necessary directories in /tmp (free tier compatible)
 echo "📁 Creating application directories..."
-mkdir -p /var/data/uploads
-mkdir -p /var/data/logs
-mkdir -p /var/data/quarantine
+mkdir -p /tmp/uploads
+mkdir -p /tmp/logs
 mkdir -p instance
 
 # Download NLTK data (required for text extraction)
@@ -36,8 +35,6 @@ else:
 nltk.download('punkt', quiet=True)
 nltk.download('stopwords', quiet=True)
 nltk.download('averaged_perceptron_tagger', quiet=True)
-nltk.download('maxent_ne_chunker', quiet=True)
-nltk.download('words', quiet=True)
 print('✅ NLTK data downloaded successfully')
 "
 
