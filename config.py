@@ -15,10 +15,16 @@ class Config:
     # ── Database ──────────────────────────────────────────────────────────────
     # Reads DATABASE_URL from .env — must be a PostgreSQL URI in production.
     # Falls back to SQLite only for local development when no .env is present.
-    SQLALCHEMY_DATABASE_URI = os.getenv(
+    database_url = os.getenv(
         'DATABASE_URL',
         f"sqlite:///{os.path.join(BASE_DIR, 'instance', 'tender.db').replace(chr(92), '/')}"
     )
+    # Fix Render PostgreSQL URL format: postgres:// -> postgresql://
+    # SQLAlchemy 1.4+ requires postgresql:// prefix
+    if database_url and database_url.startswith('postgres://'):
+        database_url = database_url.replace('postgres://', 'postgresql://', 1)
+    
+    SQLALCHEMY_DATABASE_URI = database_url
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
     # PostgreSQL-optimised connection pool settings.
