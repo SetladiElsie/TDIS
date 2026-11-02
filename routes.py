@@ -918,7 +918,4 @@ def delete_result(extraction_id):
 
 
 # ── health ─────────────────────────────────────────────────────────────────────
-
-@api.route('/health', methods=['GET'])
-def health_check():
-    return jsonify({'status': 'healthy', 'timestamp': datetime.utcnow().isoformat()}), 200
+# Health check endpoint removed - using the one in app.py with database check
