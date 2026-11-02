@@ -309,9 +309,12 @@ def create_app(config_name=None):
     return app
 
 
-if __name__ == '__main__':
-    app = create_app()
+# Create app instance for gunicorn (production)
+app = create_app()
 
+
+if __name__ == '__main__':
+    # Only used for local development
     # Ensure upload and log directories exist
     os.makedirs(app.config.get('UPLOAD_FOLDER', 'uploads'), exist_ok=True)
     os.makedirs(app.config.get('LOGS_FOLDER', 'logs'), exist_ok=True)
